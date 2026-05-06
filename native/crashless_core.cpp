@@ -280,16 +280,16 @@ void crashless_batch_clear(llama_batch& batch) {
     batch.n_tokens = 0;
 }
 
-std::string token_to_piece(llama_model* model, llama_token token) {
+std::string token_to_piece(const llama_vocab* vocab, llama_token token) {
     std::array<char, 256> stack_buffer{};
     int32_t length = llama_token_to_piece(
-        model, token, stack_buffer.data(), static_cast<int32_t>(stack_buffer.size()), 0, true);
+        vocab, token, stack_buffer.data(), static_cast<int32_t>(stack_buffer.size()), 0, true);
 
     if (length < 0) {
         std::string heap_buffer;
         heap_buffer.resize(static_cast<size_t>(-length));
         length = llama_token_to_piece(
-            model, token, heap_buffer.data(), static_cast<int32_t>(heap_buffer.size()), 0, true);
+            vocab, token, heap_buffer.data(), static_cast<int32_t>(heap_buffer.size()), 0, true);
         if (length <= 0) {
             return std::string();
         }
@@ -335,11 +335,17 @@ void generation_worker(CrashlessModelCtx* ctx_container,
             return;
         }
 
+        const llama_vocab* vocab = llama_model_get_vocab(ctx_container->model);
+        if (vocab == nullptr) {
+            invoke_callback(callback, "", true);
+            return;
+        }
+
         llama_sampler_reset(ctx_container->sampler);
 
         std::vector<llama_token> tokens(prompt.size() + 8U);
         int32_t n_tokens = llama_tokenize(
-            ctx_container->model,
+            vocab,
             prompt.c_str(),
             static_cast<int32_t>(prompt.size()),
             tokens.data(),
@@ -350,7 +356,7 @@ void generation_worker(CrashlessModelCtx* ctx_container,
         if (n_tokens < 0) {
             tokens.resize(static_cast<size_t>(-n_tokens));
             n_tokens = llama_tokenize(
-                ctx_container->model,
+                vocab,
                 prompt.c_str(),
                 static_cast<int32_t>(prompt.size()),
                 tokens.data(),
@@ -396,11 +402,11 @@ void generation_worker(CrashlessModelCtx* ctx_container,
             const llama_token new_token_id = llama_sampler_sample(ctx_container->sampler, ctx_container->ctx, -1);
             llama_sampler_accept(ctx_container->sampler, new_token_id);
 
-            if (llama_token_is_eog(ctx_container->model, new_token_id)) {
+            if (llama_vocab_is_eog(vocab, new_token_id)) {
                 break;
             }
 
-            const std::string piece = token_to_piece(ctx_container->model, new_token_id);
+            const std::string piece = token_to_piece(vocab, new_token_id);
             if (!piece.empty()) {
                 // The std::string storage is null-terminated and remains valid for this synchronous call only.
                 invoke_callback(callback, piece.c_str(), false);

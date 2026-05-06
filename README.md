@@ -24,10 +24,16 @@ Ready:
 - Managed library project: `src/CrashlessLLM/CrashlessLLM.csproj`
 - Native C ABI source: `native/crashless_core.cpp`, `native/crashless_core.h`
 - Console smoke sample: `samples/CrashlessLLM.ConsoleSmoke`
+- Avalonia UI demo: `samples/CrashlessLLM.AvaloniaDemo`
 - Deterministic xUnit stress tests: `CrashlessLLM.StressTests`
 - GitHub Actions CI scaffold: `.github/workflows/ci.yml`
 
-Not ready for final production distribution until native binaries are built and attached for the target platforms.
+Native binaries:
+
+- `runtimes/osx-arm64/native/libcrashless_core.dylib` is built and included in the package
+- Linux x64/arm64 and Windows x64 native binaries still require cross-platform CI builds
+
+See `ARCHITECTURE-DEVIATIONS.md` for documented differences between the research architecture and production implementation.
 
 ## Known limitations
 
@@ -54,6 +60,16 @@ To test CrashlessLLM, provide a local raw `.gguf` path. Ollama stores this model
 ```bash
 dotnet run --project samples/CrashlessLLM.ConsoleSmoke -- /absolute/path/to/model.gguf "Return exactly OK."
 ```
+
+### Avalonia UI demo
+
+An Avalonia sample demonstrates streaming into a TextBox without blocking the UI thread:
+
+```bash
+dotnet run --project samples/CrashlessLLM.AvaloniaDemo
+```
+
+Features: generate/cancel buttons, OOM diagnostics display, safe disposal on window close.
 
 ## Build
 
