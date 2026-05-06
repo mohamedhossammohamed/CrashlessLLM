@@ -16,3 +16,5 @@ TestResults/
 *.gguf
 *.log
 .DS_Store
+.devin/
+.agents/
