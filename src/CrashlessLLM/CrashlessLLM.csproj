@@ -12,11 +12,24 @@
     <Description>Managed crash-resistant boundary layer for local native GGUF inference.</Description>
     <PackageTags>llm;gguf;llama.cpp;native-interop;avalonia</PackageTags>
     <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/crashlessllm/CrashlessLLM</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/crashlessllm/CrashlessLLM</PackageProjectUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
+  <!-- Native runtime binaries: copy into package when pre-built -->
   <ItemGroup>
-    <Compile Include="../../CrashlessLLM.cs" Link="CrashlessLLM.cs" />
+    <None Include="../../runtimes/osx-arm64/native/libcrashless_core.dylib" Pack="true" PackagePath="runtimes/osx-arm64/native/" Condition="Exists('../../runtimes/osx-arm64/native/libcrashless_core.dylib')" />
+    <None Include="../../runtimes/osx-x64/native/libcrashless_core.dylib" Pack="true" PackagePath="runtimes/osx-x64/native/" Condition="Exists('../../runtimes/osx-x64/native/libcrashless_core.dylib')" />
+    <None Include="../../runtimes/linux-x64/native/libcrashless_core.so" Pack="true" PackagePath="runtimes/linux-x64/native/" Condition="Exists('../../runtimes/linux-x64/native/libcrashless_core.so')" />
+    <None Include="../../runtimes/linux-arm64/native/libcrashless_core.so" Pack="true" PackagePath="runtimes/linux-arm64/native/" Condition="Exists('../../runtimes/linux-arm64/native/libcrashless_core.so')" />
+    <None Include="../../runtimes/win-x64/native/crashless_core.dll" Pack="true" PackagePath="runtimes/win-x64/native/" Condition="Exists('../../runtimes/win-x64/native/crashless_core.dll')" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Include="../../README.md" Pack="true" PackagePath="/" />
+    <None Include="../../LICENSE" Pack="true" PackagePath="/" />
   </ItemGroup>
 </Project>

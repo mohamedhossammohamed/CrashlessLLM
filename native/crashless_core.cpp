@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cfloat>
 #include <cstdint>
 #include <cstring>
 #include <limits>
@@ -44,7 +45,8 @@ namespace {
 struct CrashlessConfig {
     int gpu_layers = 0;
     int threads = 1;
-    int n_ctx = 4096; // Conservative default context size.
+    int n_ctx = 4096;            // Conservative default context size.
+    double memory_margin = 0.30; // Configurable safety margin.
 };
 
 struct CrashlessModelCtx {
@@ -110,16 +112,24 @@ uint64_t get_available_physical_ram() {
     std::memset(&vmstat, 0, sizeof(vmstat));
 
     if (host_statistics64(mach_host_self(), HOST_VM_INFO64,
-                          reinterpret_cast<host_info64_t>(&vmstat), &count) == KERN_SUCCESS) {
-        int mib[2] = {CTL_HW, HW_PAGESIZE};
-        int page_size = 0;
-        size_t length = sizeof(page_size);
-        if (sysctl(mib, 2, &page_size, &length, nullptr, 0) == 0 && page_size > 0) {
-            // Intentionally excludes inactive/compressed pages to avoid memory-pressure stalls.
-            return static_cast<uint64_t>(vmstat.free_count) * static_cast<uint64_t>(page_size);
-        }
+                          reinterpret_cast<host_info64_t>(&vmstat), &count) != KERN_SUCCESS) {
+        return 0;
     }
-    return 0;
+
+    int mib[2] = {CTL_HW, HW_PAGESIZE};
+    int page_size = 0;
+    size_t length = sizeof(page_size);
+    if (sysctl(mib, 2, &page_size, &length, nullptr, 0) != 0 || page_size <= 0) {
+        return 0;
+    }
+
+    // More realistic available memory on macOS:
+    // free_count + inactive_count + speculative_count gives memory the kernel
+    // could reclaim under pressure. We exclude wired (kernel/unreclaimable).
+    uint64_t available_pages = static_cast<uint64_t>(vmstat.free_count)
+                             + static_cast<uint64_t>(vmstat.inactive_count)
+                             + static_cast<uint64_t>(vmstat.speculative_count);
+    return available_pages * static_cast<uint64_t>(page_size);
 #elif defined(__linux__) || defined(__ANDROID__)
     const long pages = sysconf(_SC_AVPHYS_PAGES);
     const long page_size = sysconf(_SC_PAGE_SIZE);
@@ -136,45 +146,110 @@ bool add_u64(uint64_t left, uint64_t right, uint64_t& result) {
     if (left > std::numeric_limits<uint64_t>::max() - right) {
         return false;
     }
-
     result = left + right;
     return true;
 }
 
-bool apply_thirty_percent_margin(uint64_t base, uint64_t& result) {
-    // Integer arithmetic preserves the strict 30% margin without floating overflow/rounding surprises.
-    const uint64_t margin = base / 10U * 3U + (base % 10U * 3U + 9U) / 10U;
-    return add_u64(base, margin, result);
+bool multiply_u64(uint64_t left, uint64_t right, uint64_t& result) {
+    if (left > 0 && right > std::numeric_limits<uint64_t>::max() / left) {
+        return false;
+    }
+    result = left * right;
+    return true;
 }
 
-bool is_memory_sufficient(const char* filepath, int n_ctx) {
+bool apply_margin(uint64_t base, double margin_fraction, uint64_t& result) {
+    if (margin_fraction <= 0.0 || base == 0) {
+        result = base;
+        return true;
+    }
+    if (!std::isfinite(margin_fraction) || margin_fraction > static_cast<double>(std::numeric_limits<uint64_t>::max())) {
+        return false;
+    }
+
+    double margin = static_cast<double>(base) * margin_fraction;
+    if (margin > static_cast<double>(std::numeric_limits<uint64_t>::max() - base)) {
+        return false;
+    }
+
+    uint64_t margin_u64 = static_cast<uint64_t>(margin);
+    return add_u64(base, margin_u64, result);
+}
+
+bool is_memory_sufficient(const char* filepath,
+                          int n_ctx,
+                          double margin_fraction,
+                          crashless_load_diagnostics* out_diag) {
     const uint64_t file_size = get_file_size_bytes(filepath);
+
+    // Populate what we know even if we will return false.
+    crashless_load_diagnostics diag{};
+    diag.model_file_bytes = file_size;
+    diag.native_error_code = CRASHLESS_SUCCESS;
+
     if (file_size == 0 || n_ctx <= 0) {
+        if (out_diag != nullptr) {
+            *out_diag = diag;
+        }
         return false;
     }
 
     // Conservative heuristic: model file + aggressive worst-case KV density per token.
     constexpr uint64_t worst_case_kv_bytes_per_token = 131072ULL;
     uint64_t estimated_kv_cache = 0;
-    if (static_cast<uint64_t>(n_ctx) > std::numeric_limits<uint64_t>::max() / worst_case_kv_bytes_per_token) {
+    if (!multiply_u64(static_cast<uint64_t>(n_ctx), worst_case_kv_bytes_per_token, estimated_kv_cache)) {
+        if (out_diag != nullptr) {
+            *out_diag = diag;
+        }
         return false;
     }
-    estimated_kv_cache = static_cast<uint64_t>(n_ctx) * worst_case_kv_bytes_per_token;
+    diag.estimated_kv_cache_bytes = estimated_kv_cache;
 
     uint64_t predicted_base_usage = 0;
     if (!add_u64(file_size, estimated_kv_cache, predicted_base_usage)) {
+        if (out_diag != nullptr) {
+            *out_diag = diag;
+        }
         return false;
     }
 
     uint64_t predicted_usage_with_margin = 0;
-    if (!apply_thirty_percent_margin(predicted_base_usage, predicted_usage_with_margin)) {
+    if (!apply_margin(predicted_base_usage, margin_fraction, predicted_usage_with_margin)) {
+        if (out_diag != nullptr) {
+            *out_diag = diag;
+        }
         return false;
     }
+    diag.safety_margin_bytes = predicted_usage_with_margin - predicted_base_usage;
+    diag.predicted_total_bytes = predicted_usage_with_margin;
 
     const uint64_t available_ram = get_available_physical_ram();
+    diag.available_physical_bytes = available_ram;
+
+    if (out_diag != nullptr) {
+        *out_diag = diag;
+    }
 
     // If RAM telemetry is unavailable, bypass gating to avoid soft-locking unsupported targets.
-    return available_ram == 0 || predicted_usage_with_margin <= available_ram;
+    if (available_ram == 0) {
+        return true;
+    }
+
+    return predicted_usage_with_margin <= available_ram;
+}
+
+// ============================================================================
+// Thread-safe diagnostics storage for last failed load
+// ============================================================================
+
+std::mutex g_last_diag_mutex;
+crashless_load_diagnostics g_last_diag{};
+bool g_last_diag_valid = false;
+
+void store_last_diagnostics(const crashless_load_diagnostics& diag) {
+    std::lock_guard<std::mutex> lock(g_last_diag_mutex);
+    g_last_diag = diag;
+    g_last_diag_valid = true;
 }
 
 // ============================================================================
@@ -410,6 +485,40 @@ int crashless_v1_create_config(int gpu_layers, int threads, void** out_config) {
     }
 }
 
+int crashless_v1_config_set_context_size(void* config, int n_ctx) {
+    if (config == nullptr) {
+        return ERR_INVALID_POINTER;
+    }
+    if (n_ctx <= 0) {
+        return ERR_INVALID_POINTER;
+    }
+
+    try {
+        static_cast<CrashlessConfig*>(config)->n_ctx = n_ctx;
+        return CRASHLESS_SUCCESS;
+    } catch (...) {
+        return ERR_INTERNAL_EXCEPTION;
+    }
+}
+
+int crashless_v1_config_set_memory_margin(void* config, double margin) {
+    if (config == nullptr) {
+        return ERR_INVALID_POINTER;
+    }
+
+    try {
+        auto* cfg = static_cast<CrashlessConfig*>(config);
+        if (!std::isfinite(margin) || margin < 0.0) {
+            cfg->memory_margin = 0.0;
+        } else {
+            cfg->memory_margin = margin;
+        }
+        return CRASHLESS_SUCCESS;
+    } catch (...) {
+        return ERR_INTERNAL_EXCEPTION;
+    }
+}
+
 void crashless_v1_free_config(void* config) {
     try {
         delete static_cast<CrashlessConfig*>(config);
@@ -417,7 +526,10 @@ void crashless_v1_free_config(void* config) {
     }
 }
 
-int crashless_v1_load_model_safe(const char* model_path, void* config_ptr, void** out_model_ctx) {
+int crashless_v1_load_model_safe_ex(const char* model_path,
+                                    void* config_ptr,
+                                    void** out_model_ctx,
+                                    crashless_load_diagnostics* out_diagnostics) {
     if (out_model_ctx == nullptr) {
         return ERR_INVALID_POINTER;
     }
@@ -430,9 +542,15 @@ int crashless_v1_load_model_safe(const char* model_path, void* config_ptr, void*
 
     try {
         const auto* config = static_cast<const CrashlessConfig*>(config_ptr);
+        crashless_load_diagnostics diag{};
 
         // Stage 1: Predictive Allocation Gating.
-        if (!is_memory_sufficient(model_path, config->n_ctx)) {
+        if (!is_memory_sufficient(model_path, config->n_ctx, config->memory_margin, &diag)) {
+            diag.native_error_code = ERR_INSUFFICIENT_MEMORY_PREDICTED;
+            store_last_diagnostics(diag);
+            if (out_diagnostics != nullptr) {
+                *out_diagnostics = diag;
+            }
             return ERR_INSUFFICIENT_MEMORY_PREDICTED;
         }
 
@@ -479,11 +597,34 @@ int crashless_v1_load_model_safe(const char* model_path, void* config_ptr, void*
         }
         llama_sampler_chain_add(ctx_container->sampler, llama_sampler_init_greedy());
 
+        if (out_diagnostics != nullptr) {
+            *out_diagnostics = diag;
+        }
+
         *out_model_ctx = static_cast<void*>(ctx_container.release());
         return CRASHLESS_SUCCESS;
     } catch (...) {
         return ERR_INTERNAL_EXCEPTION;
     }
+}
+
+int crashless_v1_load_model_safe(const char* model_path, void* config_ptr, void** out_model_ctx) {
+    return crashless_v1_load_model_safe_ex(model_path, config_ptr, out_model_ctx, nullptr);
+}
+
+int crashless_v1_get_last_load_diagnostics(crashless_load_diagnostics* out_diagnostics) {
+    if (out_diagnostics == nullptr) {
+        return ERR_INVALID_POINTER;
+    }
+
+    std::lock_guard<std::mutex> lock(g_last_diag_mutex);
+    if (!g_last_diag_valid) {
+        *out_diagnostics = crashless_load_diagnostics{};
+        return ERR_INVALID_POINTER; // Nothing stored yet.
+    }
+
+    *out_diagnostics = g_last_diag;
+    return CRASHLESS_SUCCESS;
 }
 
 int crashless_v1_generate_async(void* model_ctx_ptr,
@@ -550,16 +691,53 @@ void crashless_v1_free_session_secure(void* model_ctx_ptr) {
     ctx_container->cancel_requested.store(true, std::memory_order_release);
 
     try {
+        // Attempt to join the worker. If this is called from the worker thread itself,
+        // std::thread::join() would deadlock (or invoke undefined behavior). We detect
+        // this condition and defer cleanup to a short-lived detached helper thread so
+        // that the current call returns promptly and the model context is eventually
+        // freed without leaking indefinitely.
         std::thread worker_to_join;
+        bool self_destruct = false;
         {
             std::lock_guard<std::mutex> guard(ctx_container->worker_mutex);
             if (ctx_container->worker.joinable()) {
                 if (ctx_container->worker.get_id() == std::this_thread::get_id()) {
-                    // Self-destruction would create a use-after-free. Prefer a bounded leak to corruption.
-                    return;
+                    self_destruct = true;
+                } else {
+                    worker_to_join = std::move(ctx_container->worker);
                 }
-                worker_to_join = std::move(ctx_container->worker);
             }
+        }
+
+        if (self_destruct) {
+            // Launch a detached thread that waits briefly for the current worker
+            // to finish its callback scope, then performs cleanup.
+            std::thread deferred_cleanup([ctx_container]() {
+                // Poll until the worker marks itself inactive. The generation_worker
+                // CompletionGuard sets worker_active=false when it exits.
+                constexpr int max_wait_ms = 5000;
+                constexpr int poll_interval_ms = 10;
+                int waited_ms = 0;
+                while (ctx_container->worker_active.load(std::memory_order_acquire) && waited_ms < max_wait_ms) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(poll_interval_ms));
+                    waited_ms += poll_interval_ms;
+                }
+
+                // After the worker is done (or we timed out), we can safely join and free.
+                std::thread local_worker;
+                {
+                    std::lock_guard<std::mutex> guard(ctx_container->worker_mutex);
+                    if (ctx_container->worker.joinable()) {
+                        local_worker = std::move(ctx_container->worker);
+                    }
+                }
+                if (local_worker.joinable()) {
+                    local_worker.join();
+                }
+                free_model_container(ctx_container);
+            });
+            deferred_cleanup.detach();
+            return;
         }
 
         if (worker_to_join.joinable()) {

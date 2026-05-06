@@ -27,6 +27,15 @@ static constexpr int ERR_INTERNAL_EXCEPTION = -102;
 static constexpr int ERR_THREAD_SPAWN_FAILED = -103;
 static constexpr int ERR_GENERATION_IN_PROGRESS = -104;
 
+struct crashless_load_diagnostics {
+    uint64_t model_file_bytes = 0;
+    uint64_t estimated_kv_cache_bytes = 0;
+    uint64_t safety_margin_bytes = 0;
+    uint64_t predicted_total_bytes = 0;
+    uint64_t available_physical_bytes = 0;
+    int32_t  native_error_code = 0;
+};
+
 struct ShimConfig {
     int gpu_layers = 0;
     int threads = 1;
@@ -202,7 +211,21 @@ CRASHLESS_STRESS_API void crashless_v1_free_config(void* config) {
     delete static_cast<ShimConfig*>(config);
 }
 
-CRASHLESS_STRESS_API int crashless_v1_load_model_safe(const char* model_path, void* config, void** out_model_ctx) {
+CRASHLESS_STRESS_API int crashless_v1_config_set_context_size(void* config, int n_ctx) {
+    if (config == nullptr || n_ctx <= 0) {
+        return ERR_INVALID_POINTER;
+    }
+    return CRASHLESS_SUCCESS;
+}
+
+CRASHLESS_STRESS_API int crashless_v1_config_set_memory_margin(void* config, double) {
+    if (config == nullptr) {
+        return ERR_INVALID_POINTER;
+    }
+    return CRASHLESS_SUCCESS;
+}
+
+static int load_model_safe_impl(const char* model_path, void* config, void** out_model_ctx, crashless_load_diagnostics* out_diag) {
     if (model_path == nullptr || config == nullptr || out_model_ctx == nullptr) {
         return ERR_INVALID_POINTER;
     }
@@ -213,6 +236,11 @@ CRASHLESS_STRESS_API int crashless_v1_load_model_safe(const char* model_path, vo
     if (contains(path, "crashless_stress_oom")) {
         const std::uint64_t file_size = file_size_bytes(model_path);
         if (file_size > simulated_available_ram_bytes()) {
+            if (out_diag != nullptr) {
+                out_diag->model_file_bytes = file_size;
+                out_diag->available_physical_bytes = simulated_available_ram_bytes();
+                out_diag->native_error_code = ERR_INSUFFICIENT_MEMORY_PREDICTED;
+            }
             return ERR_INSUFFICIENT_MEMORY_PREDICTED;
         }
     }
@@ -221,10 +249,31 @@ CRASHLESS_STRESS_API int crashless_v1_load_model_safe(const char* model_path, vo
         auto* context = new ShimContext();
         *out_model_ctx = static_cast<void*>(context);
         g_active_sessions.fetch_add(1, std::memory_order_relaxed);
+        if (out_diag != nullptr) {
+            out_diag->model_file_bytes = file_size_bytes(model_path);
+            out_diag->available_physical_bytes = simulated_available_ram_bytes();
+            out_diag->native_error_code = CRASHLESS_SUCCESS;
+        }
         return CRASHLESS_SUCCESS;
     } catch (...) {
         return ERR_INTERNAL_EXCEPTION;
     }
+}
+
+CRASHLESS_STRESS_API int crashless_v1_load_model_safe(const char* model_path, void* config, void** out_model_ctx) {
+    return load_model_safe_impl(model_path, config, out_model_ctx, nullptr);
+}
+
+CRASHLESS_STRESS_API int crashless_v1_load_model_safe_ex(const char* model_path, void* config, void** out_model_ctx, crashless_load_diagnostics* out_diag) {
+    return load_model_safe_impl(model_path, config, out_model_ctx, out_diag);
+}
+
+CRASHLESS_STRESS_API int crashless_v1_get_last_load_diagnostics(crashless_load_diagnostics* out_diag) {
+    if (out_diag == nullptr) {
+        return ERR_INVALID_POINTER;
+    }
+    *out_diag = crashless_load_diagnostics{};
+    return CRASHLESS_SUCCESS;
 }
 
 CRASHLESS_STRESS_API int crashless_v1_generate_async(

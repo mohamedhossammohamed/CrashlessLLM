@@ -11,6 +11,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #if defined(_WIN32)
     #if defined(CRASHLESS_CORE_BUILD)
@@ -36,6 +37,24 @@ extern "C" {
 #define ERR_INTERNAL_EXCEPTION                     -102
 #define ERR_THREAD_SPAWN_FAILED                    -103
 #define ERR_GENERATION_IN_PROGRESS                 -104
+
+// ============================================================================
+// Load Diagnostics
+// ============================================================================
+/**
+ * @brief Structured telemetry from the predictive allocation gate.
+ *
+ * Filled when load_model_safe_ex is called with a non-null diagnostics pointer,
+ * or when querying the last failed load via crashless_v1_get_last_load_diagnostics.
+ */
+typedef struct {
+    uint64_t model_file_bytes;
+    uint64_t estimated_kv_cache_bytes;
+    uint64_t safety_margin_bytes;
+    uint64_t predicted_total_bytes;
+    uint64_t available_physical_bytes;
+    int32_t  native_error_code;
+} crashless_load_diagnostics;
 
 // ============================================================================
 // Strict Callback Contract
@@ -69,6 +88,23 @@ CRASHLESS_API int crashless_get_api_version(void);
 CRASHLESS_API int crashless_v1_create_config(int gpu_layers, int threads, void** out_config);
 
 /**
+ * @brief Sets the context size on an opaque configuration block.
+ * @param config Opaque configuration handle.
+ * @param n_ctx Context size in tokens. Must be > 0.
+ * @return CRASHLESS_SUCCESS on success, ERR_INVALID_POINTER if config is null.
+ */
+CRASHLESS_API int crashless_v1_config_set_context_size(void* config, int n_ctx);
+
+/**
+ * @brief Sets the memory safety margin on an opaque configuration block.
+ * @param config Opaque configuration handle.
+ * @param margin Fractional margin >= 0.0 (e.g. 0.30 for 30%).
+ *               Values < 0 are clamped to 0.
+ * @return CRASHLESS_SUCCESS on success, ERR_INVALID_POINTER if config is null.
+ */
+CRASHLESS_API int crashless_v1_config_set_memory_margin(void* config, double margin);
+
+/**
  * @brief Frees a configuration block created by crashless_v1_create_config.
  * @param config Opaque configuration handle.
  */
@@ -86,6 +122,35 @@ CRASHLESS_API void crashless_v1_free_config(void* config);
  * @return CRASHLESS_SUCCESS or ERR_INSUFFICIENT_MEMORY_PREDICTED.
  */
 CRASHLESS_API int crashless_v1_load_model_safe(const char* model_path, void* config, void** out_model_ctx);
+
+/**
+ * @brief Extended load with optional diagnostic telemetry.
+ *
+ * Identical behavior to crashless_v1_load_model_safe, but if out_diagnostics
+ * is non-null it is filled with predictive-gate telemetry regardless of outcome.
+ *
+ * @param model_path Absolute or process-relative filepath to the GGUF model.
+ * @param config Opaque handle to the configuration object.
+ * @param out_model_ctx Pointer to a void* receiving the session context handle.
+ * @param out_diagnostics Optional pointer to receive allocation-gate telemetry.
+ *                        May be NULL.
+ * @return CRASHLESS_SUCCESS or an error code.
+ */
+CRASHLESS_API int crashless_v1_load_model_safe_ex(const char* model_path,
+                                                  void* config,
+                                                  void** out_model_ctx,
+                                                  crashless_load_diagnostics* out_diagnostics);
+
+/**
+ * @brief Retrieves diagnostics from the most recent failed load attempt.
+ *
+ * Useful when the managed caller used crashless_v1_load_model_safe (without
+ * the _ex diagnostics pointer) and needs to explain the failure.
+ *
+ * @param out_diagnostics Pointer to receive the telemetry. Must not be NULL.
+ * @return CRASHLESS_SUCCESS if valid diagnostics were written.
+ */
+CRASHLESS_API int crashless_v1_get_last_load_diagnostics(crashless_load_diagnostics* out_diagnostics);
 
 /**
  * @brief Spawns a background worker thread for non-blocking text generation.

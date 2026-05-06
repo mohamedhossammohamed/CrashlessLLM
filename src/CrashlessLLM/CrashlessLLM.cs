@@ -13,6 +13,62 @@ using System.Threading.Tasks;
 namespace CrashlessLLM.Interop;
 
 // ============================================================================
+// Diagnostics & Options Types
+// ============================================================================
+
+/// <summary>
+/// Telemetry from the native predictive allocation gate, exposed to explain
+/// why a model load was rejected without attaching a native debugger.
+/// </summary>
+public sealed class LlmLoadDiagnostics
+{
+    public long ModelFileBytes { get; init; }
+    public long EstimatedKvCacheBytes { get; init; }
+    public long SafetyMarginBytes { get; init; }
+    public long PredictedTotalBytes { get; init; }
+    public long AvailableMemoryBytes { get; init; }
+    public int NativeErrorCode { get; init; }
+
+    public override string ToString()
+    {
+        return $"LlmLoadDiagnostics [ModelFile={ModelFileBytes:N0} B, " +
+               $"EstimatedKvCache={EstimatedKvCacheBytes:N0} B, " +
+               $"SafetyMargin={SafetyMarginBytes:N0} B, " +
+               $"PredictedTotal={PredictedTotalBytes:N0} B, " +
+               $"AvailableMemory={AvailableMemoryBytes:N0} B, " +
+               $"NativeError={NativeErrorCode}]";
+    }
+}
+
+/// <summary>
+/// Safe, explicit configuration for model loading. The zero-config overload
+/// <see cref="LLM.LoadSafe(string)"/> remains the default entry point.
+/// </summary>
+public sealed class LlmLoadOptions
+{
+    /// <summary>
+    /// CPU thread count. If null, defaults to <c>Environment.ProcessorCount / 2</c>.
+    /// </summary>
+    public int? Threads { get; init; }
+
+    /// <summary>
+    /// Context size in tokens. If null, defaults to 4096.
+    /// </summary>
+    public int? ContextSize { get; init; }
+
+    /// <summary>
+    /// GPU offload layer count. If null, defaults to 99 (maximum).
+    /// </summary>
+    public int? GpuLayers { get; init; }
+
+    /// <summary>
+    /// Fractional safety margin applied to the predicted memory footprint.
+    /// Default is 0.30 (30%). Values below 0 are clamped to 0 by the native core.
+    /// </summary>
+    public double MemorySafetyMargin { get; init; } = 0.30;
+}
+
+// ============================================================================
 // Exception Mapping & Domain Safety
 // ============================================================================
 
@@ -22,9 +78,16 @@ namespace CrashlessLLM.Interop;
 /// </summary>
 public sealed class InsufficientHardwareMemoryException : Exception
 {
-    public InsufficientHardwareMemoryException(string message) : base(message)
+    public InsufficientHardwareMemoryException(string message, LlmLoadDiagnostics? diagnostics = null)
+        : base(message)
     {
+        Diagnostics = diagnostics;
     }
+
+    /// <summary>
+    /// Native telemetry explaining why the load was rejected, if available.
+    /// </summary>
+    public LlmLoadDiagnostics? Diagnostics { get; }
 }
 
 /// <summary>
@@ -89,6 +152,12 @@ internal static partial class NativeMethods
     internal static partial int crashless_v1_create_config(int gpu_layers, int threads, out IntPtr out_config);
 
     [LibraryImport(LibraryName)]
+    internal static partial int crashless_v1_config_set_context_size(IntPtr config, int n_ctx);
+
+    [LibraryImport(LibraryName)]
+    internal static partial int crashless_v1_config_set_memory_margin(IntPtr config, double margin);
+
+    [LibraryImport(LibraryName)]
     internal static partial void crashless_v1_free_config(IntPtr config);
 
     [LibraryImport(LibraryName, StringMarshalling = StringMarshalling.Utf8)]
@@ -96,6 +165,16 @@ internal static partial class NativeMethods
         string model_path,
         IntPtr config,
         out IntPtr out_model_ctx);
+
+    [LibraryImport(LibraryName, StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial int crashless_v1_load_model_safe_ex(
+        string model_path,
+        IntPtr config,
+        out IntPtr out_model_ctx,
+        out LlmLoadDiagnosticsNative out_diagnostics);
+
+    [LibraryImport(LibraryName)]
+    internal static partial int crashless_v1_get_last_load_diagnostics(out LlmLoadDiagnosticsNative out_diagnostics);
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     internal delegate void TokenCallback(IntPtr token_utf8, [MarshalAs(UnmanagedType.I1)] bool is_done);
@@ -120,6 +199,33 @@ internal static partial class NativeMethods
     internal const int ErrInternalException = -102;
     internal const int ErrThreadSpawnFailed = -103;
     internal const int ErrGenerationInProgress = -104;
+
+    /// <summary>
+    /// Blittable struct matching the native crashless_load_diagnostics layout.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct LlmLoadDiagnosticsNative
+    {
+        internal ulong ModelFileBytes;
+        internal ulong EstimatedKvCacheBytes;
+        internal ulong SafetyMarginBytes;
+        internal ulong PredictedTotalBytes;
+        internal ulong AvailablePhysicalBytes;
+        internal int NativeErrorCode;
+
+        internal LlmLoadDiagnostics ToManaged()
+        {
+            return new LlmLoadDiagnostics
+            {
+                ModelFileBytes = (long)ModelFileBytes,
+                EstimatedKvCacheBytes = (long)EstimatedKvCacheBytes,
+                SafetyMarginBytes = (long)SafetyMarginBytes,
+                PredictedTotalBytes = (long)PredictedTotalBytes,
+                AvailableMemoryBytes = (long)AvailablePhysicalBytes,
+                NativeErrorCode = NativeErrorCode,
+            };
+        }
+    }
 }
 
 // ============================================================================
@@ -132,20 +238,35 @@ internal static partial class NativeMethods
 /// </summary>
 public static class LLM
 {
+    /// <summary>
+    /// Loads a GGUF model with sensible zero-config defaults.
+    /// </summary>
     public static LLMSession LoadSafe(string path)
     {
+        return LoadSafe(path, new LlmLoadOptions());
+    }
+
+    /// <summary>
+    /// Loads a GGUF model with explicit safe configuration options.
+    /// </summary>
+    public static LLMSession LoadSafe(string path, LlmLoadOptions options)
+    {
         ArgumentNullException.ThrowIfNull(path);
+        ArgumentNullException.ThrowIfNull(options);
 
         if (NativeMethods.crashless_get_api_version() != 1)
         {
             throw new InvalidOperationException("Incompatible crashless_core API version.");
         }
 
-        // Avoids logical SMT overcommit and keeps UI runtimes responsive under load.
-        int optimalThreads = Math.Max(1, Environment.ProcessorCount / 2);
+        // Defaults: zero-config semantics.
+        int gpuLayers = options.GpuLayers ?? 99;
+        int threads = options.Threads ?? Math.Max(1, Environment.ProcessorCount / 2);
+        int contextSize = options.ContextSize ?? 4096;
+        double margin = options.MemorySafetyMargin;
 
         IntPtr configPtr = IntPtr.Zero;
-        int configResult = NativeMethods.crashless_v1_create_config(99, optimalThreads, out configPtr);
+        int configResult = NativeMethods.crashless_v1_create_config(gpuLayers, threads, out configPtr);
         if (configResult != NativeMethods.Success || configPtr == IntPtr.Zero)
         {
             throw ToNativeException("Failed to initialize core configuration parameters.", configResult);
@@ -153,16 +274,36 @@ public static class LLM
 
         try
         {
-            int loadResult = NativeMethods.crashless_v1_load_model_safe(
+            // Apply optional overrides to the opaque native config.
+            if (contextSize != 4096)
+            {
+                NativeMethods.crashless_v1_config_set_context_size(configPtr, contextSize);
+            }
+
+            if (margin != 0.30)
+            {
+                NativeMethods.crashless_v1_config_set_memory_margin(configPtr, margin);
+            }
+
+            LlmLoadDiagnostics? diagnostics = null;
+            int loadResult = NativeMethods.crashless_v1_load_model_safe_ex(
                 path,
                 configPtr,
-                out IntPtr modelContextPtr);
+                out IntPtr modelContextPtr,
+                out NativeMethods.LlmLoadDiagnosticsNative diagNative);
+
+            diagnostics = diagNative.ToManaged();
 
             if (loadResult == NativeMethods.ErrInsufficientMemoryPredicted)
             {
                 throw new InsufficientHardwareMemoryException(
-                    "Predictive allocation gating prevented a catastrophic Out-Of-Memory failure. " +
-                    "The hardware lacks sufficient physical RAM for the model, KV cache, and 30% safety overhead.");
+                    $"Predictive allocation gating rejected model load. " +
+                    $"Predicted need: {diagnostics.PredictedTotalBytes:N0} bytes. " +
+                    $"Available: {diagnostics.AvailableMemoryBytes:N0} bytes. " +
+                    $"(Model={diagnostics.ModelFileBytes:N0} B, KV estimate={diagnostics.EstimatedKvCacheBytes:N0} B, " +
+                    $"margin={diagnostics.SafetyMarginBytes:N0} B). " +
+                    $"Try reducing ContextSize, GpuLayers, or MemorySafetyMargin.",
+                    diagnostics);
             }
 
             if (loadResult != NativeMethods.Success || modelContextPtr == IntPtr.Zero)
@@ -398,7 +539,7 @@ public sealed class LLMSession : IDisposable
                 channel?.Writer.TryComplete(ex);
             }
             catch
-            {
+                       {
             }
 
             generationDone?.TrySetResult();
