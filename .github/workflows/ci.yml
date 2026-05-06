@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  managed:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+      - name: Restore
+        run: dotnet restore CrashlessLLM.sln
+      - name: Build
+        run: dotnet build CrashlessLLM.sln --configuration Release --no-restore
+      - name: Stress tests with deterministic native shim
+        run: |
+          test_model="$RUNNER_TEMP/crashless-ci-model.gguf"
+          printf "ci" > "$test_model"
+          CRASHLESS_TEST_MODEL_PATH="$test_model" dotnet test CrashlessLLM.StressTests/CrashlessLLM.StressTests.csproj --configuration Release --framework net8.0 --no-build

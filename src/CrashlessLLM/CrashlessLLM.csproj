@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>true</IsPackable>
+    <PackageId>CrashlessLLM</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>CrashlessLLM Contributors</Authors>
+    <Description>Managed crash-resistant boundary layer for local native GGUF inference.</Description>
+    <PackageTags>llm;gguf;llama.cpp;native-interop;avalonia</PackageTags>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../../CrashlessLLM.cs" Link="CrashlessLLM.cs" />
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+</Project>
