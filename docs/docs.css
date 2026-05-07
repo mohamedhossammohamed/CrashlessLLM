@@ -308,41 +308,83 @@ code {
 
 .pipeline-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
   align-items: stretch;
   margin-top: 28px;
 }
 
 .pipeline-node {
+  position: relative;
   display: grid;
-  gap: 10px;
-  min-height: 150px;
-  padding: 18px;
-  border-radius: 22px;
+  min-width: 0;
+  gap: 12px;
+  align-content: start;
+  min-height: 178px;
+  padding: 20px;
+  overflow: hidden;
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at top right, rgba(103, 232, 249, 0.08), transparent 58%),
+    rgba(255, 255, 255, 0.045);
+}
+
+.pipeline-node::before {
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: 3px;
+  background: linear-gradient(90deg, rgba(103, 232, 249, 0.75), rgba(103, 232, 249, 0));
+  content: "";
+}
+
+.pipeline-node span,
+.pipeline-node code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.pipeline-node .pipeline-step {
+  width: fit-content;
+  padding: 5px 9px;
+  border: 1px solid rgba(103, 232, 249, 0.22);
+  border-radius: 999px;
+  color: var(--cyan);
+  background: rgba(103, 232, 249, 0.08);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1;
 }
 
 .pipeline-node strong {
   color: var(--text);
+  font-size: 1.05rem;
+  line-height: 1.25;
 }
 
 .pipeline-node.gate {
   border-color: rgba(139, 255, 191, 0.24);
 }
 
+.pipeline-node.gate::before {
+  background: linear-gradient(90deg, rgba(139, 255, 191, 0.72), rgba(139, 255, 191, 0));
+}
+
 .pipeline-node.native {
   border-color: rgba(167, 139, 250, 0.26);
 }
 
-.pipeline-node.ui {
-  grid-column: 3 / span 1;
+.pipeline-node.native::before {
+  background: linear-gradient(90deg, rgba(167, 139, 250, 0.72), rgba(167, 139, 250, 0));
+}
+
+.pipeline-node.ui::before {
+  background: linear-gradient(90deg, rgba(139, 255, 191, 0.72), rgba(103, 232, 249, 0));
 }
 
 .pipeline-arrow {
-  display: grid;
-  place-items: center;
-  color: var(--cyan);
-  font-size: 1.8rem;
+  display: none;
 }
 
 .error-grid,
@@ -411,14 +453,6 @@ code {
   .error-grid,
   .docs-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .pipeline-arrow {
-    display: none;
-  }
-
-  .pipeline-node.ui {
-    grid-column: auto;
   }
 }
 

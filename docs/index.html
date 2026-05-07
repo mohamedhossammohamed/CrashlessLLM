@@ -101,15 +101,11 @@
         <h2>The boundary is deliberately layered.</h2>
         <p>The architecture separates developer ergonomics from native survival mechanics. The public surface remains small while the internals enforce admission control, ABI safety, streaming pressure control, and deterministic cleanup.</p>
         <div class="pipeline-grid">
-          <div class="pipeline-node managed"><strong>Avalonia / .NET app</strong><span>Calls <code>LLM.LoadSafe()</code> and consumes <code>IAsyncEnumerable&lt;string&gt;</code>.</span></div>
-          <div class="pipeline-arrow">→</div>
-          <div class="pipeline-node"><strong>Managed facade</strong><span>Validates ABI, applies defaults, maps errors into exceptions.</span></div>
-          <div class="pipeline-arrow">→</div>
-          <div class="pipeline-node gate"><strong>Predictive allocation gate</strong><span>Refuses unsafe model/context admissions before native load.</span></div>
-          <div class="pipeline-arrow">→</div>
-          <div class="pipeline-node native"><strong>Opaque C ABI session</strong><span>No C++ ownership crosses into managed code.</span></div>
-          <div class="pipeline-arrow">→</div>
-          <div class="pipeline-node ui"><strong>Bounded token stream</strong><span>UTF-8 reconstructed, channel backpressured, UI remains async.</span></div>
+          <div class="pipeline-node managed"><span class="pipeline-step">01</span><strong>Avalonia / .NET app</strong><span>Calls <code>LLM.LoadSafe()</code> and consumes <code>IAsyncEnumerable&lt;string&gt;</code>.</span></div>
+          <div class="pipeline-node"><span class="pipeline-step">02</span><strong>Managed facade</strong><span>Validates ABI, applies defaults, maps errors into exceptions.</span></div>
+          <div class="pipeline-node gate"><span class="pipeline-step">03</span><strong>Predictive allocation gate</strong><span>Refuses unsafe model/context admissions before native load.</span></div>
+          <div class="pipeline-node native"><span class="pipeline-step">04</span><strong>Opaque C ABI session</strong><span>No C++ ownership crosses into managed code.</span></div>
+          <div class="pipeline-node ui"><span class="pipeline-step">05</span><strong>Bounded token stream</strong><span>UTF-8 reconstructed, channel backpressured, UI remains async.</span></div>
         </div>
       </section>
 
