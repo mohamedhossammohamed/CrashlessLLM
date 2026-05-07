@@ -9,6 +9,8 @@ using System.Text;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CrashlessLLM.Interop;
 
@@ -41,6 +43,83 @@ public sealed class LlmLoadDiagnostics
 }
 
 /// <summary>
+/// GPU backends compiled into the native crashless_core library.
+/// </summary>
+[Flags]
+public enum GpuBackend
+{
+    None   = 0,
+    Metal  = 1 << 0,
+    Cuda   = 1 << 1,
+    Vulkan = 1 << 2,
+    Rocm   = 1 << 3,
+    Sycl   = 1 << 4
+}
+
+/// <summary>
+/// Model architecture metadata for accurate memory estimation.
+/// </summary>
+public sealed class ModelArchInfo
+{
+    public int NLayer { get; init; }
+    public int NEmbd { get; init; }
+    public int NEmbdK { get; init; }
+    public int NEmbdV { get; init; }
+    public int NHead { get; init; }
+    public int NHeadKv { get; init; }
+    public int NCtxTrain { get; init; }
+    public long BytesPerTokenKv { get; init; }
+
+    public override string ToString()
+    {
+        return $"ModelArchInfo [n_layer={NLayer}, n_embd={NEmbd}, n_head={NHead}, " +
+               $"n_head_kv={NHeadKv}, kv_bytes/token={BytesPerTokenKv}]";
+    }
+}
+
+/// <summary>
+/// Sampling controls for token generation. Sentinel values (null for nullable,
+/// or defaults) mean "use the native default."
+/// </summary>
+public sealed class SamplingOptions
+{
+    /// <summary>
+    /// Temperature for token sampling. Default 1.0. Set to 0 for greedy decoding.
+    /// </summary>
+    public float? Temperature { get; init; }
+
+    /// <summary>
+    /// Top-K sampling. Default 40. Set to 1 for top-1.
+    /// </summary>
+    public int? TopK { get; init; }
+
+    /// <summary>
+    /// Top-P (nucleus) sampling. Default 0.95.
+    /// </summary>
+    public float? TopP { get; init; }
+
+    /// <summary>
+    /// Min-P sampling. Default 0.05.
+    /// </summary>
+    public float? MinP { get; init; }
+
+    /// <summary>
+    /// Repeat penalty. Default 1.0 (disabled). Values > 1 penalize repetition.
+    /// </summary>
+    public float? RepeatPenalty { get; init; }
+
+    /// <summary>
+    /// Number of last tokens to consider for repeat penalty. Default 64.
+    /// </summary>
+    public int RepeatLastN { get; init; } = 64;
+
+    /// <summary>
+    /// RNG seed for reproducibility. 0 means random.
+    /// </summary>
+    public long Seed { get; init; }
+}
+
+/// <summary>
 /// Safe, explicit configuration for model loading. The zero-config overload
 /// <see cref="LLM.LoadSafe(string)"/> remains the default entry point.
 /// </summary>
@@ -66,6 +145,18 @@ public sealed class LlmLoadOptions
     /// Default is 0.30 (30%). Values below 0 are clamped to 0 by the native core.
     /// </summary>
     public double MemorySafetyMargin { get; init; } = 0.30;
+
+    /// <summary>
+    /// Maximum number of tokens to generate per stream call.
+    /// Default 512. Set to -1 for unlimited (up to context size).
+    /// </summary>
+    public int MaxTokens { get; init; } = 512;
+
+    /// <summary>
+    /// Sampling controls for token generation. Null means native defaults (temperature=1.0,
+    /// top-k=40, top-p=0.95, min-p=0.05, greedy if temperature=0).
+    /// </summary>
+    public SamplingOptions? Sampling { get; init; }
 }
 
 // ============================================================================
@@ -101,6 +192,108 @@ public sealed class NativeInferenceException : Exception
     }
 
     public int ErrorCode { get; }
+}
+
+// ============================================================================
+// Chat Message & Template Support
+// ============================================================================
+
+/// <summary>
+/// Represents a single message in a chat conversation.
+/// </summary>
+public sealed record ChatMessage
+{
+    public string Role { get; init; } = "user";
+    public string Content { get; init; } = "";
+
+    public ChatMessage() { }
+
+    public ChatMessage(string role, string content)
+    {
+        Role = role;
+        Content = content;
+    }
+}
+
+/// <summary>
+/// Formats chat messages into model-specific prompt strings.
+/// Supports common chat templates used by popular open-weight models.
+/// </summary>
+public static class ChatTemplate
+{
+    /// <summary>
+    /// Llama 3 / 3.1 / 3.2 instruct format.
+    /// </summary>
+    public static string Llama3(IEnumerable<ChatMessage> messages)
+    {
+        var sb = new StringBuilder();
+        sb.Append("<|begin_of_text|>");
+        foreach (var msg in messages)
+        {
+            sb.Append($"<|start_header_id|>{msg.Role}<|end_header_id|>\n\n{msg.Content}<|eot_id|>");
+        }
+        sb.Append("<|start_header_id|>assistant<|end_header_id|>\n\n");
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Mistral / Mixtral instruct format (v0.1/v0.2/v0.3).
+    /// </summary>
+    public static string Mistral(IEnumerable<ChatMessage> messages)
+    {
+        var sb = new StringBuilder();
+        sb.Append("<s>");
+        foreach (var msg in messages)
+        {
+            sb.Append($"[INST] {msg.Content} [/INST]");
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// ChatML format (used by Qwen, Yi, DeepSeek, and many others).
+    /// </summary>
+    public static string ChatML(IEnumerable<ChatMessage> messages)
+    {
+        var sb = new StringBuilder();
+        foreach (var msg in messages)
+        {
+            sb.Append($"<|im_start|>{msg.Role}\n{msg.Content}<|im_end|>\n");
+        }
+        sb.Append("<|im_start|>assistant\n");
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Gemma instruct format.
+    /// </summary>
+    public static string Gemma(IEnumerable<ChatMessage> messages)
+    {
+        var sb = new StringBuilder();
+        foreach (var msg in messages)
+        {
+            string role = msg.Role == "assistant" ? "model" : msg.Role;
+            sb.Append($"<start_of_turn>{role}\n{msg.Content}<end_of_turn>\n");
+        }
+        sb.Append("<start_of_turn>model\n");
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Phi-3 / Phi-4 chat format.
+    /// </summary>
+    public static string Phi(IEnumerable<ChatMessage> messages)
+    {
+        var sb = new StringBuilder();
+        foreach (var msg in messages)
+        {
+            sb.Append(msg.Role == "system"
+                ? $"<|system|>\n{msg.Content}<|end|>\n"
+                : $"<|{msg.Role}|>\n{msg.Content}<|end|>\n");
+        }
+        sb.Append("<|assistant|>\n");
+        return sb.ToString();
+    }
 }
 
 // ============================================================================
@@ -158,6 +351,14 @@ internal static partial class NativeMethods
     internal static partial int crashless_v1_config_set_memory_margin(IntPtr config, double margin);
 
     [LibraryImport(LibraryName)]
+    internal static partial int crashless_v1_config_set_sampling_params(
+        IntPtr config,
+        in SamplingParamsNative sampling);
+
+    [LibraryImport(LibraryName)]
+    internal static partial int crashless_v1_config_set_n_predict(IntPtr config, int n_predict);
+
+    [LibraryImport(LibraryName)]
     internal static partial void crashless_v1_free_config(IntPtr config);
 
     [LibraryImport(LibraryName, StringMarshalling = StringMarshalling.Utf8)]
@@ -175,6 +376,14 @@ internal static partial class NativeMethods
 
     [LibraryImport(LibraryName)]
     internal static partial int crashless_v1_get_last_load_diagnostics(out LlmLoadDiagnosticsNative out_diagnostics);
+
+    [LibraryImport(LibraryName)]
+    internal static partial int crashless_v1_query_gpu_backends();
+
+    [LibraryImport(LibraryName)]
+    internal static partial int crashless_v1_query_model_arch_info(
+        SafeLlmContextHandle model_ctx,
+        out ModelArchInfoNative out_info);
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     internal delegate void TokenCallback(IntPtr token_utf8, [MarshalAs(UnmanagedType.I1)] bool is_done);
@@ -226,6 +435,60 @@ internal static partial class NativeMethods
             };
         }
     }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct SamplingParamsNative
+    {
+        internal float Temperature;
+        internal int TopK;
+        internal float TopP;
+        internal float MinP;
+        internal float RepeatPenalty;
+        internal int RepeatLastN;
+        internal long Seed;
+
+        internal static SamplingParamsNative FromOptions(SamplingOptions? options)
+        {
+            return new SamplingParamsNative
+            {
+                Temperature    = options?.Temperature ?? -1.0f,
+                TopK           = options?.TopK ?? 0,
+                TopP           = options?.TopP ?? -1.0f,
+                MinP           = options?.MinP ?? -1.0f,
+                RepeatPenalty  = options?.RepeatPenalty ?? -1.0f,
+                RepeatLastN    = options?.RepeatLastN ?? 64,
+                Seed           = options?.Seed ?? 0,
+            };
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct ModelArchInfoNative
+    {
+        internal int NLayer;
+        internal int NEmbd;
+        internal int NEmbdK;
+        internal int NEmbdV;
+        internal int NHead;
+        internal int NHeadKv;
+        internal int NCtxTrain;
+        internal long BytesPerTokenKv;
+
+        internal ModelArchInfo ToManaged()
+        {
+            return new ModelArchInfo
+            {
+                NLayer = NLayer,
+                NEmbd = NEmbd,
+                NEmbdK = NEmbdK,
+                NEmbdV = NEmbdV,
+                NHead = NHead,
+                NHeadKv = NHeadKv,
+                NCtxTrain = NCtxTrain,
+                BytesPerTokenKv = BytesPerTokenKv,
+            };
+        }
+    }
 }
 
 // ============================================================================
@@ -239,17 +502,35 @@ internal static partial class NativeMethods
 public static class LLM
 {
     /// <summary>
+    /// Queries which GPU backends are compiled into the native crashless_core library.
+    /// </summary>
+    public static GpuBackend QueryGpuBackends()
+    {
+        return (GpuBackend)NativeMethods.crashless_v1_query_gpu_backends();
+    }
+
+    /// <summary>
     /// Loads a GGUF model with sensible zero-config defaults.
     /// </summary>
     public static LLMSession LoadSafe(string path)
     {
-        return LoadSafe(path, new LlmLoadOptions());
+        return LoadSafe(path, new LlmLoadOptions(), NullLogger.Instance);
+    }
+
+    public static LLMSession LoadSafe(string path, ILogger? logger)
+    {
+        return LoadSafe(path, new LlmLoadOptions(), logger);
     }
 
     /// <summary>
     /// Loads a GGUF model with explicit safe configuration options.
     /// </summary>
     public static LLMSession LoadSafe(string path, LlmLoadOptions options)
+    {
+        return LoadSafe(path, options, NullLogger.Instance);
+    }
+
+    public static LLMSession LoadSafe(string path, LlmLoadOptions options, ILogger? logger)
     {
         ArgumentNullException.ThrowIfNull(path);
         ArgumentNullException.ThrowIfNull(options);
@@ -264,6 +545,8 @@ public static class LLM
         int threads = options.Threads ?? Math.Max(1, Environment.ProcessorCount / 2);
         int contextSize = options.ContextSize ?? 4096;
         double margin = options.MemorySafetyMargin;
+        int maxTokens = options.MaxTokens;
+        SamplingOptions? sampling = options.Sampling;
 
         IntPtr configPtr = IntPtr.Zero;
         int configResult = NativeMethods.crashless_v1_create_config(gpuLayers, threads, out configPtr);
@@ -283,6 +566,17 @@ public static class LLM
             if (margin != 0.30)
             {
                 NativeMethods.crashless_v1_config_set_memory_margin(configPtr, margin);
+            }
+
+            if (maxTokens != 512)
+            {
+                NativeMethods.crashless_v1_config_set_n_predict(configPtr, maxTokens);
+            }
+
+            if (sampling is not null)
+            {
+                var samplingNative = NativeMethods.SamplingParamsNative.FromOptions(sampling);
+                NativeMethods.crashless_v1_config_set_sampling_params(configPtr, samplingNative);
             }
 
             LlmLoadDiagnostics? diagnostics = null;
@@ -311,7 +605,7 @@ public static class LLM
                 throw ToNativeException("Failed to natively load model.", loadResult);
             }
 
-            return new LLMSession(new SafeLlmContextHandle(modelContextPtr));
+            return new LLMSession(new SafeLlmContextHandle(modelContextPtr), logger ?? NullLogger.Instance);
         }
         finally
         {
@@ -342,6 +636,10 @@ public static class LLM
 /// <summary>
 /// Represents an active, GC-safe LLM embedding session. Enforces immediate
 /// deterministic cleanup via IDisposable and streams without blocking UI threads.
+///
+/// For concurrent generation, create multiple independent sessions via
+/// <see cref="LLM.LoadSafe(string)"/> — each session wraps its own native context
+/// and can run one stream at a time on its own thread.
 /// </summary>
 public sealed class LLMSession : IDisposable
 {
@@ -355,6 +653,7 @@ public sealed class LLMSession : IDisposable
         throwOnInvalidBytes: false);
 
     private readonly SafeLlmContextHandle _handle;
+    private readonly ILogger _logger;
     private readonly SemaphoreSlim _streamGate = new(1, 1);
     private readonly object _callbackLock = new();
     private readonly List<byte> _utf8Accumulator = new(capacity: 128);
@@ -368,9 +667,39 @@ public sealed class LLMSession : IDisposable
     private int _isDisposed;
 
     internal LLMSession(SafeLlmContextHandle handle)
+        : this(handle, NullLogger.Instance)
+    {
+    }
+
+    internal LLMSession(SafeLlmContextHandle handle, ILogger logger)
     {
         _handle = handle;
+        _logger = logger;
         _pinnedCallback = HandleNativeTokenCallback;
+        _logger.LogDebug("LLMSession created (handle=0x{Handle:X})", handle.DangerousGetHandle());
+    }
+
+    /// <summary>
+    /// Queries accurate model architecture metadata from the native context.
+    /// Must be called after a successful model load. Returns null on failure.
+    /// </summary>
+    public ModelArchInfo? QueryModelArchInfo()
+    {
+        VerifyNotDisposed();
+
+        int result = NativeMethods.crashless_v1_query_model_arch_info(
+            _handle,
+            out NativeMethods.ModelArchInfoNative nativeInfo);
+
+        if (result != NativeMethods.Success)
+        {
+            _logger.LogWarning("QueryModelArchInfo failed with native error {ErrorCode}", result);
+            return null;
+        }
+
+        var info = nativeInfo.ToManaged();
+        _logger.LogDebug("Model arch: {ArchInfo}", info);
+        return info;
     }
 
     /// <summary>
@@ -384,6 +713,9 @@ public sealed class LLMSession : IDisposable
     {
         ArgumentNullException.ThrowIfNull(prompt);
         VerifyNotDisposed();
+
+        _logger.LogDebug("StreamAsync acquiring gate (prompt preview: {Preview})",
+            prompt.Length > 60 ? prompt[..60] + "..." : prompt);
 
         await _streamGate.WaitAsync(cancellationToken);
 
@@ -420,6 +752,7 @@ public sealed class LLMSession : IDisposable
             NativeMethods.TokenCallback callback = _pinnedCallback
                 ?? throw new ObjectDisposedException(nameof(LLMSession));
 
+            _logger.LogDebug("Starting native generation");
             int startResult = NativeMethods.crashless_v1_generate_async(
                 _handle,
                 prompt,
@@ -429,12 +762,14 @@ public sealed class LLMSession : IDisposable
             if (startResult != NativeMethods.Success)
             {
                 Exception exception = CreateGenerationException(startResult);
+                _logger.LogError(exception, "Native generation start failed with code {ErrorCode}", startResult);
                 channel.Writer.TryComplete(exception);
                 generationDone.TrySetResult();
                 throw exception;
             }
 
             nativeStarted = true;
+            _logger.LogDebug("Native generation started, streaming tokens");
 
             await foreach (string token in channel.Reader.ReadAllAsync(cancellationToken))
             {
@@ -670,6 +1005,8 @@ public sealed class LLMSession : IDisposable
             return;
         }
 
+        _logger.LogDebug("LLMSession disposing");
+
         CancelNativeGenerationNoThrow();
 
         // Do not take _callbackLock here: the native callback may be synchronously
@@ -680,5 +1017,7 @@ public sealed class LLMSession : IDisposable
         _handle.Dispose();
         _pinnedCallback = null;
         GC.SuppressFinalize(this);
+
+        _logger.LogDebug("LLMSession disposed");
     }
 }

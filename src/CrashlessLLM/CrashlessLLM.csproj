@@ -7,14 +7,14 @@
     <LangVersion>latest</LangVersion>
     <IsPackable>true</IsPackable>
     <PackageId>CrashlessLLM</PackageId>
-    <Version>0.1.0</Version>
-    <Authors>CrashlessLLM Contributors</Authors>
+    <Version>0.2.0-alpha</Version>
+    <Authors>MHMZAHRAN</Authors>
     <Description>Managed crash-resistant boundary layer for local native GGUF inference.</Description>
     <PackageTags>llm;gguf;llama.cpp;native-interop;avalonia</PackageTags>
     <RepositoryType>git</RepositoryType>
-    <RepositoryUrl>https://github.com/crashlessllm/CrashlessLLM</RepositoryUrl>
-    <PackageProjectUrl>https://github.com/crashlessllm/CrashlessLLM</PackageProjectUrl>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/mohamedhossammohamed/CrashlessLLM</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/mohamedhossammohamed/CrashlessLLM</PackageProjectUrl>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
@@ -31,5 +31,9 @@
   <ItemGroup>
     <None Include="../../README.md" Pack="true" PackagePath="/" />
     <None Include="../../LICENSE" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
   </ItemGroup>
 </Project>

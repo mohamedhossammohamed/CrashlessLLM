@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CrashlessLLM — Crash-resistant local LLMs for .NET</title>
+  <meta name="description" content="CrashlessLLM is a zero-config, crash-resistant native embedding layer for local GGUF LLMs in .NET and Avalonia apps with predictive gating, sampling controls, chat templates, and bounded streaming.">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="page-glow"></div>
+  <header class="nav">
+    <a class="brand" href="#top" aria-label="CrashlessLLM home">
+      <span class="brand-mark"></span>
+      <span>CrashlessLLM</span>
+    </a>
+    <nav class="nav-links" aria-label="Primary navigation">
+      <a href="#architecture">Architecture</a>
+      <a href="#code">Code</a>
+      <a href="#features">Features</a>
+      <a href="docs/ARCHITECTURE.md">Docs</a>
+      <a href="https://x.com/MohamedHz72007">X</a>
+    </nav>
+    <a class="nav-github" href="https://github.com/mohamedhossammohamed/CrashlessLLM">GitHub</a>
+  </header>
+
+  <main id="top">
+    <section class="hero section-shell">
+      <div class="hero-copy">
+        <div class="eyebrow"><span></span> Native GGUF inference without UI process roulette</div>
+        <h1>The local LLM runtime that refuses to crash your app.</h1>
+        <p class="hero-subtitle">CrashlessLLM gives .NET and Avalonia teams a three-line API over predictive memory gating, configurable sampling, chat templates, GPU backend detection, SafeHandle cleanup, and UTF-8-safe bounded streaming.</p>
+        <p class="creator-line">By <strong>MHMZAHRAN</strong> · announcements on <a href="https://x.com/MohamedHz72007">@MohamedHz72007</a></p>
+        <div class="hero-actions">
+          <a class="button primary" href="https://github.com/mohamedhossammohamed/CrashlessLLM">View on GitHub</a>
+          <button class="button secondary" id="copyCommand" type="button" data-command="dotnet add package CrashlessLLM --version 0.2.0-alpha">Copy NuGet Command</button>
+        </div>
+        <div class="command-pill" id="commandPill">dotnet add package CrashlessLLM --version 0.2.0-alpha</div>
+        <div class="proof-row" aria-label="Key stability promises">
+          <span>Predictive OOM rejection</span>
+          <span>50-token bounded channel</span>
+          <span>Sampling + chat templates</span>
+          <span>GPU backend query</span>
+        </div>
+      </div>
+      <div class="hero-card" id="architecture">
+        <div class="card-header">
+          <span class="dot red"></span>
+          <span class="dot yellow"></span>
+          <span class="dot green"></span>
+          <strong>crashless boundary</strong>
+        </div>
+        <div class="stability-meter">
+          <span>Naive wrapper</span>
+          <div class="meter unstable"><i></i></div>
+          <span>CrashlessLLM</span>
+          <div class="meter stable"><i></i></div>
+        </div>
+        <div class="hero-stat-grid">
+          <div><strong>0</strong><span>UI thread blocking by design</span></div>
+          <div><strong>3</strong><span>lines to integrate</span></div>
+          <div><strong>5</strong><span>built-in chat templates</span></div>
+          <div><strong>12</strong><span>stress tests passing</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="visual-section section-shell" aria-labelledby="visual-title">
+      <div class="section-heading">
+        <span class="section-kicker">The vibe</span>
+        <h2 id="visual-title">A hostile memory environment, contained.</h2>
+        <p>Red allocator pressure approaches the process. The Crashless Boundary gates unsafe loads, absorbs token bursts, and releases a stable stream to Avalonia.</p>
+      </div>
+      <div class="memory-visual" role="img" aria-label="Animated diagram showing hostile memory particles being caught by CrashlessLLM and converted into stable token streams for Avalonia UI">
+        <canvas id="memoryCanvas"></canvas>
+        <div class="visual-label left">Hostile Memory Environment</div>
+        <div class="visual-label center">Crashless Boundary</div>
+        <div class="visual-label right">Avalonia UI</div>
+        <div class="shield">
+          <div class="shield-core">LLM.LoadSafe()</div>
+        </div>
+        <div class="ui-block">
+          <span class="ui-title">Avalonia UI</span>
+          <span class="ui-line wide"></span>
+          <span class="ui-line"></span>
+          <span class="ui-line short"></span>
+        </div>
+        <div class="token-stream" aria-hidden="true">
+          <span>stable</span>
+          <span>tokens</span>
+          <span>no freeze</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="code-section section-shell" id="code" aria-labelledby="code-title">
+      <div class="section-heading compact">
+        <span class="section-kicker">The API</span>
+        <h2 id="code-title">Three lines, production-grade boundary.</h2>
+      </div>
+      <div class="code-window">
+        <div class="code-titlebar">
+          <span class="dot red"></span>
+          <span class="dot yellow"></span>
+          <span class="dot green"></span>
+          <span>MainWindow.axaml.cs</span>
+        </div>
+        <pre><code><span class="kw">using var</span> llm = <span class="type">LLM</span>.<span class="fn">LoadSafe</span>(<span class="str">"models/llama-3-8b.gguf"</span>);
+<span class="kw">await foreach</span> (<span class="kw">var</span> token <span class="kw">in</span> llm.<span class="fn">StreamAsync</span>(<span class="str">"Explain stable local inference."</span>))
+    Output.Text += token;</code></pre>
+      </div>
+    </section>
+
+    <section class="features section-shell" id="features" aria-labelledby="features-title">
+      <div class="section-heading compact">
+        <span class="section-kicker">System stability primitives</span>
+        <h2 id="features-title">Built for apps that need to stay open and ship.</h2>
+      </div>
+      <div class="feature-grid">
+        <article class="feature-card">
+          <div class="feature-icon gate"></div>
+          <h3>Predictive Gating</h3>
+          <p>CrashlessLLM estimates model bytes, worst-case KV cache, and margin before native allocation. Unsafe loads become explicit diagnostics, not surprise process death.</p>
+        </article>
+        <article class="feature-card">
+          <div class="feature-icon ui"></div>
+          <h3>Zero UI Blocking</h3>
+          <p>Generation runs on a native worker and streams through <code>IAsyncEnumerable&lt;string&gt;</code>. When the UI slows down, backpressure lands on the worker, not the window.</p>
+        </article>
+        <article class="feature-card">
+          <div class="feature-icon gc"></div>
+          <h3>GC-Safe Streaming</h3>
+          <p>Ephemeral UTF-8 pointers are copied immediately, callback delegates stay pinned for the session lifetime, and SafeHandle-owned native resources release deterministically.</p>
+        </article>
+        <article class="feature-card">
+          <div class="feature-icon gate"></div>
+          <h3>Sampling Controls</h3>
+          <p>Temperature, top-k, top-p, min-p, repeat penalty, repeat window, seed, and max tokens are configured from C# and translated into a native sampler chain.</p>
+        </article>
+        <article class="feature-card">
+          <div class="feature-icon ui"></div>
+          <h3>Chat Templates</h3>
+          <p>Format conversations for Llama 3, ChatML, Mistral, Gemma, and Phi without scattering prompt syntax across your Avalonia view models.</p>
+        </article>
+        <article class="feature-card">
+          <div class="feature-icon gate"></div>
+          <h3>Accurate KV Introspection</h3>
+          <p>After a safe load, query model layers, heads, context training size, and exact KV bytes per token for diagnostics and memory-aware UI reporting.</p>
+        </article>
+        <article class="feature-card">
+          <div class="feature-icon ui"></div>
+          <h3>GPU Backend Detection</h3>
+          <p>Ask the native library which backends were compiled in — Metal, CUDA, Vulkan, ROCm, or SYCL — before presenting acceleration options.</p>
+        </article>
+        <article class="feature-card">
+          <div class="feature-icon gc"></div>
+          <h3>Native Release Pipeline</h3>
+          <p>Cross-platform CI builds macOS, Linux, and Windows native artifacts. The NuGet publish script builds, tests, packs, verifies, and pushes.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="comparison section-shell" aria-labelledby="comparison-title">
+      <div class="section-heading compact">
+        <span class="section-kicker">Why developers switch</span>
+        <h2 id="comparison-title">Naive wrappers optimize for access. CrashlessLLM optimizes for survival.</h2>
+      </div>
+      <div class="comparison-grid">
+        <div class="comparison-card bad">
+          <h3>Naive llama.cpp wrapper</h3>
+          <ul>
+            <li>Loads first, discovers OOM later</li>
+            <li>Pushes tokens faster than UI can paint</li>
+            <li>Lets C++ lifetime leak into managed code</li>
+            <li>Hardcodes sampling, token limits, and prompt formats</li>
+          </ul>
+        </div>
+        <div class="comparison-card good">
+          <h3>CrashlessLLM</h3>
+          <ul>
+            <li>Rejects unsafe allocations before load</li>
+            <li>Bounds token pressure with channel backpressure</li>
+            <li>Owns native lifetime through SafeHandle</li>
+            <li>Exposes sampling, chat templates, GPU flags, and model architecture</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer section-shell">
+    <span>CrashlessLLM</span>
+    <span>Apache-2.0</span>
+    <a href="docs/ARCHITECTURE.md">Architecture</a>
+    <a href="https://x.com/MohamedHz72007">X @MohamedHz72007</a>
+    <a href="https://github.com/mohamedhossammohamed/CrashlessLLM">GitHub</a>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>

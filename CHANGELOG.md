@@ -45,6 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `LLM.LoadSafe` wires through `MaxTokens` and `SamplingOptions` to native config
 - Native sampler chain now builds dynamically based on config (greedy or temperature-based with top-k/top-p/min-p)
 - Stress test native shim updated with new ABI stubs and model arch query mock
+- `LLM.LoadSafe` now includes public `ILogger` overloads for structured session logging
+- Package metadata and repository license switched to Apache-2.0
 
 ## [0.1.0-alpha] - 2025-05-07
 

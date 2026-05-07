@@ -1,0 +1,59 @@
+name: Feature request
+description: Suggest a stability, API, packaging, or documentation improvement
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement. CrashlessLLM prioritizes app stability, safe native ownership, and low-friction .NET/Avalonia integration.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What problem would this solve for CrashlessLLM users?
+      placeholder: I need a way to...
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the API, behavior, documentation, or workflow you want.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Public C# API
+        - Native C ABI
+        - Predictive allocation gating
+        - Sampling / decoding
+        - Chat templates
+        - Avalonia integration
+        - NuGet packaging
+        - Cross-platform CI
+        - Documentation / website
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What alternatives or workarounds have you tried?
+  - type: textarea
+    id: stability
+    attributes:
+      label: Stability impact
+      description: How should this preserve CrashlessLLM's safety goals: no UI blocking, bounded memory pressure, deterministic native ownership, and explicit errors?
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: This request is related to local native GGUF inference.
+        - label: This request keeps the managed/native boundary explicit and deterministic.
+        - label: I searched existing issues before opening this request.

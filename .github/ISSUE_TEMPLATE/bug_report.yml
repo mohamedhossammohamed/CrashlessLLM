@@ -1,0 +1,91 @@
+name: Bug report
+description: Report a CrashlessLLM stability, interop, streaming, packaging, or documentation bug
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please include enough detail for maintainers to reproduce the issue without guessing.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened?
+      placeholder: CrashlessLLM rejected a model unexpectedly / stream hangs on cancellation / native binary not found...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happened? Include exception type, native error code, or diagnostics if available.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: Provide a minimal code sample or command sequence.
+      render: csharp
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Predictive allocation gating
+        - Native library loading / packaging
+        - Token streaming / UTF-8 reconstruction
+        - Backpressure / UI responsiveness
+        - Sampling / max tokens
+        - Chat templates
+        - GPU backend detection
+        - Model architecture query
+        - Documentation / website
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: CrashlessLLM version or commit
+      placeholder: 0.2.0-alpha or commit SHA
+    validations:
+      required: true
+  - type: input
+    id: dotnet
+    attributes:
+      label: .NET version
+      placeholder: output of dotnet --info or SDK/runtime version
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS / architecture
+      placeholder: macOS arm64, Ubuntu x64, Windows x64...
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics / logs
+      description: Include `LlmLoadDiagnostics`, structured logs, stack traces, or CI output. Do not include secrets.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I am using a raw local GGUF file, not Ollama or a remote API.
+        - label: I am not including secrets, tokens, private model URLs, or proprietary model files.
+        - label: I searched existing issues before opening this report.

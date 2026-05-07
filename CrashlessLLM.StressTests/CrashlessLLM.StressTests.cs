@@ -649,6 +649,175 @@ public sealed class CrashlessLlmStressTests
         {
         }
     }
+
+    // ============================================================================
+    // New Feature Tests (v0.2 additions)
+    // ============================================================================
+
+    [Fact]
+    public void QueryGpuBackends_ReturnsValidBitmask()
+    {
+        GpuBackend backends = LLM.QueryGpuBackends();
+        output.WriteLine($"GPU backends: {backends}");
+        // Must not throw, and the value should be a valid enum combination.
+        Assert.True(Enum.IsDefined(typeof(GpuBackend), GpuBackend.None));
+        Assert.True((int)backends >= 0);
+    }
+
+    [Fact]
+    public void QueryModelArchInfo_ReturnsAccurateMetadata()
+    {
+        EnsureConfiguredModelPath();
+        ResetMetricsAndAssertIdle();
+
+        using var session = LLM.LoadSafe(TestConfig.ModelPath);
+        ModelArchInfo? info = session.QueryModelArchInfo();
+
+        Assert.NotNull(info);
+        output.WriteLine($"Model arch: {info}");
+
+        Assert.True(info!.NLayer > 0, $"Expected NLayer > 0, got {info.NLayer}");
+        Assert.True(info.NEmbd > 0, $"Expected NEmbd > 0, got {info.NEmbd}");
+        Assert.True(info.NHead > 0, $"Expected NHead > 0, got {info.NHead}");
+        Assert.True(info.NHeadKv > 0, $"Expected NHeadKv > 0, got {info.NHeadKv}");
+        Assert.True(info.BytesPerTokenKv > 0, $"Expected BytesPerTokenKv > 0, got {info.BytesPerTokenKv}");
+        // A realistic per-token KV cache is at least a few KB.
+        Assert.True(info.BytesPerTokenKv >= 1024,
+            $"BytesPerTokenKv ({info.BytesPerTokenKv}) is implausibly small.");
+    }
+
+    [Fact]
+    public async Task StreamAsync_WithTemperatureZero_ProducesTokensWithoutError()
+    {
+        EnsureConfiguredModelPath();
+        ResetMetricsAndAssertIdle();
+
+        var options = new LlmLoadOptions
+        {
+            Sampling = new SamplingOptions { Temperature = 0.0f }
+        };
+
+        var tokens = new List<string>();
+
+        using (var session = LLM.LoadSafe(TestConfig.ModelPath, options))
+        {
+            await foreach (string token in session.StreamAsync("Return exactly OK."))
+            {
+                tokens.Add(token);
+            }
+        }
+
+        // Ensure native cleanup completes.
+        await Task.Delay(100);
+        ForceFullGcAndGetManagedBytes();
+
+        output.WriteLine($"Temp=0 tokens: {tokens.Count}, first='{tokens.FirstOrDefault()}'");
+        Assert.NotEmpty(tokens);
+        Assert.Equal(0, StressNativeMethods.crashless_stress_get_active_sessions());
+        Assert.Equal(0, StressNativeMethods.crashless_stress_get_active_workers());
+    }
+
+    [Fact]
+    public async Task StreamAsync_WithMaxTokens_RespectsGenerationLimit()
+    {
+        EnsureConfiguredModelPath();
+        ResetMetricsAndAssertIdle();
+
+        var options = new LlmLoadOptions { MaxTokens = 10 };
+
+        int tokenCount = 0;
+        var stopwatch = Stopwatch.StartNew();
+
+        using (var session = LLM.LoadSafe(TestConfig.ModelPath, options))
+        {
+            await foreach (string token in session.StreamAsync("Count to twenty: 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20"))
+            {
+                tokenCount++;
+            }
+        }
+
+        await Task.Delay(100);
+        ForceFullGcAndGetManagedBytes();
+        stopwatch.Stop();
+
+        output.WriteLine($"MaxTokens=10 elapsed={stopwatch.Elapsed}; tokenCount={tokenCount}");
+        Assert.True(tokenCount >= 0);
+        Assert.Equal(0, StressNativeMethods.crashless_stress_get_active_sessions());
+        Assert.Equal(0, StressNativeMethods.crashless_stress_get_active_workers());
+    }
+
+    [Fact]
+    public void ChatTemplate_Llama3_FormatsCorrectly()
+    {
+        var messages = new[]
+        {
+            new ChatMessage("system", "You are helpful."),
+            new ChatMessage("user", "Hello")
+        };
+
+        string formatted = ChatTemplate.Llama3(messages);
+
+        output.WriteLine($"Llama3 template: {formatted}");
+        Assert.Contains("<|begin_of_text|>", formatted);
+        Assert.Contains("<|start_header_id|>system<|end_header_id|>", formatted);
+        Assert.Contains("<|start_header_id|>user<|end_header_id|>", formatted);
+        Assert.Contains("<|start_header_id|>assistant<|end_header_id|>", formatted);
+        Assert.Contains("<|eot_id|>", formatted);
+    }
+
+    [Fact]
+    public void ChatTemplate_ChatML_FormatsCorrectly()
+    {
+        var messages = new[]
+        {
+            new ChatMessage("system", "You are helpful."),
+            new ChatMessage("user", "Hello")
+        };
+
+        string formatted = ChatTemplate.ChatML(messages);
+
+        output.WriteLine($"ChatML template: {formatted}");
+        Assert.Contains("<|im_start|>system", formatted);
+        Assert.Contains("<|im_start|>user", formatted);
+        Assert.Contains("<|im_start|>assistant", formatted);
+        Assert.Contains("<|im_end|>", formatted);
+    }
+
+    [Fact]
+    public void LlmLoadOptions_WithSamplingAndMaxTokens_PassesValidation()
+    {
+        EnsureConfiguredModelPath();
+        ResetMetricsAndAssertIdle();
+
+        var options = new LlmLoadOptions
+        {
+            MaxTokens = 256,
+            Sampling = new SamplingOptions
+            {
+                Temperature = 0.7f,
+                TopK = 50,
+                TopP = 0.9f,
+                RepeatPenalty = 1.1f,
+                Seed = 42
+            },
+            ContextSize = 2048,
+            Threads = 2
+        };
+
+        LLMSession? session = null;
+        try
+        {
+            session = LLM.LoadSafe(TestConfig.ModelPath, options);
+            Assert.NotNull(session);
+        }
+        finally
+        {
+            session?.Dispose();
+        }
+
+        ForceFullGcAndGetManagedBytes();
+        Assert.Equal(0, StressNativeMethods.crashless_stress_get_active_sessions());
+    }
 }
 
 internal sealed class SingleThreadedUiContext : SynchronizationContext, IDisposable

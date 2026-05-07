@@ -32,39 +32,54 @@ jobs:
           CRASHLESS_TEST_MODEL_PATH="$test_model" dotnet test CrashlessLLM.StressTests/CrashlessLLM.StressTests.csproj --configuration Release --framework ${{ matrix.dotnet }} --no-build
         shell: bash
 
-  # Native build is gated behind llama.cpp availability.
-  # To enable: clone llama.cpp into a sibling directory and set CRASHLESS_LLAMA_CPP_DIR.
   native:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, ubuntu-latest]
+        include:
+          - os: macos-14
+            artifact: libcrashless_core.dylib
+            rid: osx-arm64
+          - os: macos-13
+            artifact: libcrashless_core.dylib
+            rid: osx-x64
+          - os: ubuntu-latest
+            artifact: libcrashless_core.so
+            rid: linux-x64
+          - os: ubuntu-24.04-arm
+            artifact: libcrashless_core.so
+            rid: linux-arm64
+          - os: windows-latest
+            artifact: crashless_core.dll
+            rid: win-x64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - name: Check for CMake
-        id: cmake
+      - name: Clone llama.cpp
         run: |
-          if command -v cmake &> /dev/null; then
-            echo "available=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "available=false" >> "$GITHUB_OUTPUT"
-          fi
+          git clone --depth 1 https://github.com/ggerganov/llama.cpp.git "${{ github.workspace }}/../llama.cpp"
         shell: bash
-      - name: Native build (conditional)
-        if: steps.cmake.outputs.available == 'true'
+      - name: Build native core
         run: |
           cd native
-          # This job succeeds even if llama.cpp is missing, because the real
-          # native build is documented as a pre-release manual step.
-          if [ -d "${{ github.workspace }}/../llama.cpp" ]; then
-            cmake -S . -B build -DCRASHLESS_LLAMA_CPP_DIR="${{ github.workspace }}/../llama.cpp"
-            cmake --build build --config Release
-          else
-            echo "llama.cpp not available at sibling path; skipping real native build."
-            echo "Set CRASHLESS_LLAMA_CPP_DIR to enable this step."
-          fi
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCRASHLESS_LLAMA_CPP_DIR="${{ github.workspace }}/../llama.cpp"
+          cmake --build build --config Release
         shell: bash
+      - name: Copy native artifact
+        run: |
+          mkdir -p "runtimes/${{ matrix.rid }}/native"
+          cp "native/build/${{ matrix.artifact }}" "runtimes/${{ matrix.rid }}/native/"
+        shell: bash
+      - name: Smoke-test native binary
+        run: |
+          echo "Native binary: $(file runtimes/${{ matrix.rid }}/native/${{ matrix.artifact }})"
+          test -f "runtimes/${{ matrix.rid }}/native/${{ matrix.artifact }}" || exit 1
+        shell: bash
+      - name: Upload native artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: crashless-core-${{ matrix.rid }}
+          path: runtimes/${{ matrix.rid }}/native/${{ matrix.artifact }}
 
   pack:
     runs-on: ubuntu-latest

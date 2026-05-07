@@ -39,6 +39,61 @@ extern "C" {
 #define ERR_GENERATION_IN_PROGRESS                 -104
 
 // ============================================================================
+// Sampling Parameters
+// ============================================================================
+/**
+ * @brief Configurable sampling controls for token generation.
+ *
+ * All fields use sentinel values to indicate "use default":
+ *   - temperature < 0.0f → use default (1.0f)
+ *   - top_k <= 0       → use default (40)
+ *   - top_p < 0.0f     → use default (0.95f)
+ *   - min_p < 0.0f     → use default (0.05f)
+ *   - repeat_penalty < 0.0f → use default (1.0f, disabled)
+ */
+typedef struct {
+    float temperature;
+    int32_t top_k;
+    float top_p;
+    float min_p;
+    float repeat_penalty;
+    int32_t repeat_last_n;
+    int64_t seed;
+} crashless_sampling_params;
+
+// ============================================================================
+// GPU Backend Detection
+// ============================================================================
+/**
+ * @brief Bitmask flags for GPU backends compiled into the native library.
+ */
+typedef enum {
+    CRASHLESS_GPU_BACKEND_NONE    = 0,
+    CRASHLESS_GPU_BACKEND_METAL   = 1 << 0,
+    CRASHLESS_GPU_BACKEND_CUDA    = 1 << 1,
+    CRASHLESS_GPU_BACKEND_VULKAN  = 1 << 2,
+    CRASHLESS_GPU_BACKEND_ROCM    = 1 << 3,
+    CRASHLESS_GPU_BACKEND_SYCL    = 1 << 4
+} crashless_gpu_backend_flags;
+
+// ============================================================================
+// Model Architecture Info (for accurate KV cache estimation)
+// ============================================================================
+/**
+ * @brief Model architecture metadata queried post-load for accurate memory estimation.
+ */
+typedef struct {
+    int32_t n_layer;
+    int32_t n_embd;
+    int32_t n_embd_k;
+    int32_t n_embd_v;
+    int32_t n_head;
+    int32_t n_head_kv;
+    int32_t n_ctx_train;
+    uint64_t n_bytes_per_token_kv;  // accurate per-token KV cache bytes
+} crashless_model_arch_info;
+
+// ============================================================================
 // Load Diagnostics
 // ============================================================================
 /**
@@ -103,6 +158,23 @@ CRASHLESS_API int crashless_v1_config_set_context_size(void* config, int n_ctx);
  * @return CRASHLESS_SUCCESS on success, ERR_INVALID_POINTER if config is null.
  */
 CRASHLESS_API int crashless_v1_config_set_memory_margin(void* config, double margin);
+
+/**
+ * @brief Sets the sampling parameters on an opaque configuration block.
+ * @param config Opaque configuration handle.
+ * @param params Sampling parameters. Sentinel values indicate "use default".
+ * @return CRASHLESS_SUCCESS on success, ERR_INVALID_POINTER if config is null.
+ */
+CRASHLESS_API int crashless_v1_config_set_sampling_params(void* config,
+                                                           const crashless_sampling_params* params);
+
+/**
+ * @brief Sets the maximum number of tokens to predict (generation limit).
+ * @param config Opaque configuration handle.
+ * @param n_predict Max tokens to generate. Must be >= -1 (-1 = unlimited).
+ * @return CRASHLESS_SUCCESS on success, ERR_INVALID_POINTER if config is null.
+ */
+CRASHLESS_API int crashless_v1_config_set_n_predict(void* config, int n_predict);
 
 /**
  * @brief Frees a configuration block created by crashless_v1_create_config.
@@ -182,6 +254,29 @@ CRASHLESS_API void crashless_v1_cancel_generation(void* model_ctx);
  * @param model_ctx Opaque handle to the active session context.
  */
 CRASHLESS_API void crashless_v1_free_session_secure(void* model_ctx);
+
+// ============================================================================
+// GPU Backend & Model Architecture Queries
+// ============================================================================
+
+/**
+ * @brief Queries which GPU backends were compiled into the native library.
+ * @return Bitmask of crashless_gpu_backend_flags.
+ */
+CRASHLESS_API int crashless_v1_query_gpu_backends(void);
+
+/**
+ * @brief Queries model architecture metadata for accurate KV cache estimation.
+ *
+ * Must be called after a successful model load. Reads n_layer, n_embd, etc.
+ * from the loaded llama_model to compute accurate per-token KV cache bytes.
+ *
+ * @param model_ctx Opaque handle to the active session context.
+ * @param out_info Pointer to receive architecture metadata. Must not be NULL.
+ * @return CRASHLESS_SUCCESS on success, error code on failure.
+ */
+CRASHLESS_API int crashless_v1_query_model_arch_info(void* model_ctx,
+                                                      crashless_model_arch_info* out_info);
 
 #ifdef __cplusplus
 }

@@ -36,6 +36,27 @@ struct crashless_load_diagnostics {
     int32_t  native_error_code = 0;
 };
 
+struct crashless_sampling_params {
+    float temperature = -1.0f;
+    int32_t top_k = 0;
+    float top_p = -1.0f;
+    float min_p = -1.0f;
+    float repeat_penalty = -1.0f;
+    int32_t repeat_last_n = 64;
+    int64_t seed = 0;
+};
+
+struct crashless_model_arch_info {
+    int32_t n_layer = 0;
+    int32_t n_embd = 0;
+    int32_t n_embd_k = 0;
+    int32_t n_embd_v = 0;
+    int32_t n_head = 0;
+    int32_t n_head_kv = 0;
+    int32_t n_ctx_train = 0;
+    uint64_t n_bytes_per_token_kv = 0;
+};
+
 struct ShimConfig {
     int gpu_layers = 0;
     int threads = 1;
@@ -225,6 +246,21 @@ CRASHLESS_STRESS_API int crashless_v1_config_set_memory_margin(void* config, dou
     return CRASHLESS_SUCCESS;
 }
 
+CRASHLESS_STRESS_API int crashless_v1_config_set_sampling_params(void* config,
+                                                                 const crashless_sampling_params*) {
+    if (config == nullptr) {
+        return ERR_INVALID_POINTER;
+    }
+    return CRASHLESS_SUCCESS;
+}
+
+CRASHLESS_STRESS_API int crashless_v1_config_set_n_predict(void* config, int) {
+    if (config == nullptr) {
+        return ERR_INVALID_POINTER;
+    }
+    return CRASHLESS_SUCCESS;
+}
+
 static int load_model_safe_impl(const char* model_path, void* config, void** out_model_ctx, crashless_load_diagnostics* out_diag) {
     if (model_path == nullptr || config == nullptr || out_model_ctx == nullptr) {
         return ERR_INVALID_POINTER;
@@ -273,6 +309,30 @@ CRASHLESS_STRESS_API int crashless_v1_get_last_load_diagnostics(crashless_load_d
         return ERR_INVALID_POINTER;
     }
     *out_diag = crashless_load_diagnostics{};
+    return CRASHLESS_SUCCESS;
+}
+
+CRASHLESS_STRESS_API int crashless_v1_query_gpu_backends(void) {
+    return 0; // No GPU backends in the deterministic test shim.
+}
+
+CRASHLESS_STRESS_API int crashless_v1_query_model_arch_info(
+    void* model_ctx,
+    crashless_model_arch_info* out_info) {
+    if (model_ctx == nullptr || out_info == nullptr) {
+        return ERR_INVALID_POINTER;
+    }
+
+    // Provide realistic Llama 3.2 1B-like architecture metadata.
+    *out_info = crashless_model_arch_info{};
+    out_info->n_layer              = 16;
+    out_info->n_embd               = 2048;
+    out_info->n_embd_k             = 256;
+    out_info->n_embd_v             = 256;
+    out_info->n_head               = 32;
+    out_info->n_head_kv            = 8;
+    out_info->n_ctx_train          = 131072;
+    out_info->n_bytes_per_token_kv = 2ULL * 16 * 64 * 8 * 4; // 8192 bytes/token
     return CRASHLESS_SUCCESS;
 }
 

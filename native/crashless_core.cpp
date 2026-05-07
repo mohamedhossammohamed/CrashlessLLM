@@ -46,7 +46,17 @@ struct CrashlessConfig {
     int gpu_layers = 0;
     int threads = 1;
     int n_ctx = 4096;            // Conservative default context size.
+    int n_predict = 512;         // Default generation token limit.
     double memory_margin = 0.30; // Configurable safety margin.
+
+    // Sampling controls (sentinel values = "use default")
+    float temperature = -1.0f;      // < 0 → default 1.0
+    int   top_k = 0;                // <= 0 → default 40
+    float top_p = -1.0f;            // < 0 → default 0.95
+    float min_p = -1.0f;            // < 0 → default 0.05
+    float repeat_penalty = -1.0f;   // < 0 → default 1.0 (disabled)
+    int   repeat_last_n = 64;
+    int64_t seed = 0;
 };
 
 struct CrashlessModelCtx {
@@ -396,7 +406,10 @@ void generation_worker(CrashlessModelCtx* ctx_container,
 
         int32_t n_cur = batch.n_tokens;
         int32_t n_decode = 0;
-        const int32_t n_predict = std::min<int32_t>(512, ctx_container->config.n_ctx - n_cur);
+        const int n_predict_config = ctx_container->config.n_predict;
+        const int32_t n_predict = (n_predict_config == -1)
+            ? ctx_container->config.n_ctx - n_cur
+            : std::min<int32_t>(n_predict_config, ctx_container->config.n_ctx - n_cur);
 
         while (n_decode < n_predict && !is_cancelled(ctx_container, external_cancel_flag)) {
             const llama_token new_token_id = llama_sampler_sample(ctx_container->sampler, ctx_container->ctx, -1);
@@ -525,6 +538,41 @@ int crashless_v1_config_set_memory_margin(void* config, double margin) {
     }
 }
 
+int crashless_v1_config_set_sampling_params(void* config,
+                                            const crashless_sampling_params* params) {
+    if (config == nullptr || params == nullptr) {
+        return ERR_INVALID_POINTER;
+    }
+
+    try {
+        auto* cfg = static_cast<CrashlessConfig*>(config);
+        cfg->temperature    = params->temperature;
+        cfg->top_k          = params->top_k;
+        cfg->top_p          = params->top_p;
+        cfg->min_p          = params->min_p;
+        cfg->repeat_penalty = params->repeat_penalty;
+        cfg->repeat_last_n  = params->repeat_last_n > 0 ? params->repeat_last_n : 64;
+        cfg->seed           = params->seed;
+        return CRASHLESS_SUCCESS;
+    } catch (...) {
+        return ERR_INTERNAL_EXCEPTION;
+    }
+}
+
+int crashless_v1_config_set_n_predict(void* config, int n_predict) {
+    if (config == nullptr) {
+        return ERR_INVALID_POINTER;
+    }
+
+    try {
+        auto* cfg = static_cast<CrashlessConfig*>(config);
+        cfg->n_predict = (n_predict < -1) ? -1 : n_predict;
+        return CRASHLESS_SUCCESS;
+    } catch (...) {
+        return ERR_INTERNAL_EXCEPTION;
+    }
+}
+
 void crashless_v1_free_config(void* config) {
     try {
         delete static_cast<CrashlessConfig*>(config);
@@ -591,8 +639,10 @@ int crashless_v1_load_model_safe_ex(const char* model_path,
             return ERR_MODEL_LOAD_FAILED;
         }
 
-        // Stage 5: Deterministic greedy sampling chain.
+        // Stage 5: Build configurable sampler chain.
+        const auto& cfg = ctx_container->config;
         llama_sampler_chain_params sparams = llama_sampler_chain_default_params();
+        sparams.no_perf = false;
         ctx_container->sampler = llama_sampler_chain_init(sparams);
         if (ctx_container->sampler == nullptr) {
             llama_free(ctx_container->ctx);
@@ -601,7 +651,36 @@ int crashless_v1_load_model_safe_ex(const char* model_path,
             ctx_container->model = nullptr;
             return ERR_MODEL_LOAD_FAILED;
         }
-        llama_sampler_chain_add(ctx_container->sampler, llama_sampler_init_greedy());
+
+        // Resolve sampling defaults.
+        const float temperature    = cfg.temperature < 0.0f     ? 1.0f   : cfg.temperature;
+        const int   top_k          = cfg.top_k <= 0             ? 40     : cfg.top_k;
+        const float top_p          = cfg.top_p < 0.0f           ? 0.95f  : cfg.top_p;
+        const float min_p          = cfg.min_p < 0.0f           ? 0.05f  : cfg.min_p;
+        const float repeat_penalty = cfg.repeat_penalty < 0.0f  ? 1.0f   : cfg.repeat_penalty;
+
+        if (repeat_penalty != 1.0f) {
+            llama_sampler_chain_add(ctx_container->sampler,
+                llama_sampler_init_penalties(
+                    cfg.repeat_last_n > 0 ? cfg.repeat_last_n : 64,
+                    repeat_penalty, 0.0f, 0.0f));
+        }
+
+        if (temperature <= 0.0f) {
+            // Greedy decoding when temperature is 0.
+            llama_sampler_chain_add(ctx_container->sampler, llama_sampler_init_greedy());
+        } else {
+            llama_sampler_chain_add(ctx_container->sampler,
+                llama_sampler_init_top_k(top_k));
+            llama_sampler_chain_add(ctx_container->sampler,
+                llama_sampler_init_top_p(top_p, 1));
+            llama_sampler_chain_add(ctx_container->sampler,
+                llama_sampler_init_min_p(min_p, 1));
+            llama_sampler_chain_add(ctx_container->sampler,
+                llama_sampler_init_temp(temperature));
+            llama_sampler_chain_add(ctx_container->sampler,
+                llama_sampler_init_dist(cfg.seed));
+        }
 
         if (out_diagnostics != nullptr) {
             *out_diagnostics = diag;
@@ -753,6 +832,74 @@ void crashless_v1_free_session_secure(void* model_ctx_ptr) {
         free_model_container(ctx_container);
     } catch (...) {
         // Swallowing exceptions on deletion prevents application crash during teardown.
+    }
+}
+
+// ============================================================================
+// GPU Backend & Model Architecture Queries
+// ============================================================================
+
+int crashless_v1_query_gpu_backends(void) {
+    int flags = CRASHLESS_GPU_BACKEND_NONE;
+#if defined(GGML_USE_METAL)
+    flags |= CRASHLESS_GPU_BACKEND_METAL;
+#endif
+#if defined(GGML_USE_CUDA)
+    flags |= CRASHLESS_GPU_BACKEND_CUDA;
+#endif
+#if defined(GGML_USE_VULKAN)
+    flags |= CRASHLESS_GPU_BACKEND_VULKAN;
+#endif
+#if defined(GGML_USE_HIP)
+    flags |= CRASHLESS_GPU_BACKEND_ROCM;
+#endif
+#if defined(GGML_USE_SYCL)
+    flags |= CRASHLESS_GPU_BACKEND_SYCL;
+#endif
+    return flags;
+}
+
+int crashless_v1_query_model_arch_info(void* model_ctx_ptr,
+                                        crashless_model_arch_info* out_info) {
+    if (model_ctx_ptr == nullptr || out_info == nullptr) {
+        return ERR_INVALID_POINTER;
+    }
+
+    try {
+        auto* ctx_container = static_cast<CrashlessModelCtx*>(model_ctx_ptr);
+        if (ctx_container->model == nullptr) {
+            return ERR_INVALID_POINTER;
+        }
+
+        const int n_layer   = llama_model_n_layer(ctx_container->model);
+        const int n_embd    = llama_model_n_embd(ctx_container->model);
+        const int n_head    = llama_model_n_head(ctx_container->model);
+        const int n_head_kv = llama_model_n_head_kv(ctx_container->model);
+        const int n_ctx_train = llama_model_n_ctx_train(ctx_container->model);
+
+        // KV cache: 2 tensors (K + V) × n_layer × n_embd_k_gqa × n_embd_head × sizeof(float)
+        // n_embd_k_gqa = n_embd / n_head * n_head_kv = n_embd_k (or n_embd_v for grouped-query)
+        // Accurate per-token bytes = 2 × n_layer × (n_embd / n_head) × n_head_kv × sizeof(float)
+        const int n_embd_head = n_head > 0 ? n_embd / n_head : 0;
+        const uint64_t n_bytes_per_token_kv = static_cast<uint64_t>(2)
+            * static_cast<uint64_t>(n_layer)
+            * static_cast<uint64_t>(n_embd_head)
+            * static_cast<uint64_t>(n_head_kv)
+            * static_cast<uint64_t>(sizeof(float));
+
+        *out_info = crashless_model_arch_info{};
+        out_info->n_layer              = n_layer;
+        out_info->n_embd               = n_embd;
+        out_info->n_embd_k             = n_embd_head * n_head_kv;
+        out_info->n_embd_v             = n_embd_head * n_head_kv;
+        out_info->n_head               = n_head;
+        out_info->n_head_kv            = n_head_kv;
+        out_info->n_ctx_train          = n_ctx_train;
+        out_info->n_bytes_per_token_kv = n_bytes_per_token_kv;
+
+        return CRASHLESS_SUCCESS;
+    } catch (...) {
+        return ERR_INTERNAL_EXCEPTION;
     }
 }
 
