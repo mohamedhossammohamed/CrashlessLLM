@@ -1,0 +1,454 @@
+.docs-body {
+  background:
+    radial-gradient(circle at 50% -20%, rgba(103, 232, 249, 0.18), transparent 34rem),
+    radial-gradient(circle at 8% 12%, rgba(167, 139, 250, 0.14), transparent 28rem),
+    linear-gradient(180deg, #05060a 0%, #070a11 46%, #05060a 100%);
+}
+
+.docs-nav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: min(1280px, calc(100% - 40px));
+  margin: 0 auto;
+  padding: 18px 0;
+  backdrop-filter: blur(18px);
+}
+
+.docs-nav-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(8, 11, 18, 0.66);
+}
+
+.docs-nav-links a {
+  padding: 8px 12px;
+  border-radius: 999px;
+  color: var(--muted-strong);
+  font-size: 0.88rem;
+  transition: color 180ms ease, background 180ms ease;
+}
+
+.docs-nav-links a:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.docs-layout {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 34px;
+  width: min(1280px, calc(100% - 40px));
+  margin: 0 auto;
+  padding: 42px 0 80px;
+}
+
+.docs-toc {
+  position: sticky;
+  top: 96px;
+  align-self: start;
+  display: grid;
+  gap: 4px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  background: rgba(9, 13, 22, 0.72);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(16px);
+}
+
+.toc-kicker,
+.docs-eyebrow {
+  color: var(--cyan);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.docs-toc a {
+  padding: 9px 10px;
+  border-radius: 12px;
+  color: var(--muted-strong);
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.docs-toc a:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.docs-article {
+  min-width: 0;
+}
+
+.docs-hero,
+.doc-section {
+  border: 1px solid var(--border);
+  border-radius: 32px;
+  background: linear-gradient(180deg, rgba(17, 22, 36, 0.86), rgba(8, 11, 19, 0.8));
+  box-shadow: 0 24px 120px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(20px);
+}
+
+.docs-hero {
+  padding: clamp(28px, 5vw, 58px);
+  overflow: hidden;
+}
+
+.docs-hero h1 {
+  max-width: 900px;
+  margin: 12px 0 22px;
+  font-size: clamp(3rem, 8vw, 6.4rem);
+  line-height: 1.02;
+  letter-spacing: -0.055em;
+}
+
+.docs-hero p,
+.doc-section p {
+  color: var(--muted-strong);
+  line-height: 1.84;
+}
+
+.docs-hero p {
+  max-width: 890px;
+  font-size: clamp(1.04rem, 1.9vw, 1.25rem);
+}
+
+.docs-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 28px;
+}
+
+.docs-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 34px;
+}
+
+.docs-metrics div,
+.split-cards div,
+.non-goal-grid div,
+.template-grid div,
+.stream-steps div,
+.error-grid div,
+.pipeline-node {
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.docs-metrics div {
+  min-height: 116px;
+  padding: 18px;
+  border-radius: 22px;
+}
+
+.docs-metrics strong {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 2rem;
+  letter-spacing: -0.04em;
+}
+
+.docs-metrics span,
+.pipeline-node span,
+.template-grid span,
+.stream-steps span,
+.split-cards span,
+.non-goal-grid span,
+.error-grid span {
+  color: var(--muted);
+  line-height: 1.62;
+}
+
+.doc-section {
+  margin-top: 24px;
+  padding: clamp(24px, 4vw, 42px);
+  scroll-margin-top: 110px;
+}
+
+.doc-section h2 {
+  max-width: 880px;
+  margin: 10px 0 18px;
+  font-size: clamp(2rem, 4vw, 3.4rem);
+  line-height: 1.08;
+  letter-spacing: -0.04em;
+}
+
+.doc-section h3 {
+  margin: 28px 0 12px;
+  font-size: 1.2rem;
+  letter-spacing: -0.01em;
+}
+
+.doc-callout {
+  display: grid;
+  gap: 8px;
+  margin: 24px 0;
+  padding: 18px 20px;
+  border: 1px solid rgba(103, 232, 249, 0.22);
+  border-radius: 20px;
+  background: rgba(103, 232, 249, 0.07);
+}
+
+.doc-callout strong {
+  color: #e8fdff;
+}
+
+.doc-callout span {
+  color: var(--muted-strong);
+  line-height: 1.75;
+}
+
+.doc-callout.danger {
+  border-color: rgba(255, 77, 109, 0.26);
+  background: rgba(255, 77, 109, 0.07);
+}
+
+.doc-callout.success {
+  border-color: rgba(139, 255, 191, 0.24);
+  background: rgba(139, 255, 191, 0.07);
+}
+
+.table-wrap {
+  width: 100%;
+  margin: 22px 0;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: rgba(3, 5, 10, 0.34);
+}
+
+table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  padding: 15px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  text-align: left;
+  vertical-align: top;
+  line-height: 1.65;
+}
+
+th {
+  color: #eafcff;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.84rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+td {
+  color: var(--muted-strong);
+}
+
+td:first-child {
+  color: var(--text);
+}
+
+tr:last-child td {
+  border-bottom: 0;
+}
+
+code,
+pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+code {
+  color: #d8fbff;
+}
+
+.code-block,
+.formula-card pre {
+  margin: 22px 0 0;
+  padding: 22px;
+  overflow-x: auto;
+  border: 1px solid rgba(103, 232, 249, 0.16);
+  border-radius: 20px;
+  color: #dbe7ff;
+  background: rgba(2, 4, 10, 0.72);
+  line-height: 1.78;
+}
+
+.formula-card {
+  margin: 24px 0;
+  padding: 22px;
+  border: 1px solid rgba(103, 232, 249, 0.22);
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at top right, rgba(103, 232, 249, 0.1), transparent 52%),
+    rgba(255, 255, 255, 0.04);
+}
+
+.formula-card h3 {
+  margin-top: 0;
+}
+
+.formula-card p {
+  margin-bottom: 0;
+}
+
+.pipeline-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
+  margin-top: 28px;
+}
+
+.pipeline-node {
+  display: grid;
+  gap: 10px;
+  min-height: 150px;
+  padding: 18px;
+  border-radius: 22px;
+}
+
+.pipeline-node strong {
+  color: var(--text);
+}
+
+.pipeline-node.gate {
+  border-color: rgba(139, 255, 191, 0.24);
+}
+
+.pipeline-node.native {
+  border-color: rgba(167, 139, 250, 0.26);
+}
+
+.pipeline-node.ui {
+  grid-column: 3 / span 1;
+}
+
+.pipeline-arrow {
+  display: grid;
+  place-items: center;
+  color: var(--cyan);
+  font-size: 1.8rem;
+}
+
+.error-grid,
+.stream-steps,
+.template-grid,
+.split-cards,
+.non-goal-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 22px;
+}
+
+.error-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.stream-steps {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.template-grid div,
+.stream-steps div,
+.split-cards div,
+.non-goal-grid div,
+.error-grid div {
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+  border-radius: 20px;
+}
+
+.template-grid strong,
+.stream-steps strong,
+.split-cards strong,
+.non-goal-grid strong {
+  color: var(--text);
+}
+
+.error-grid code {
+  font-size: 1.2rem;
+  color: var(--cyan);
+}
+
+.doc-final {
+  margin-bottom: 20px;
+}
+
+@media (max-width: 1080px) {
+  .docs-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .docs-toc {
+    position: relative;
+    top: 0;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .toc-kicker {
+    grid-column: 1 / -1;
+  }
+
+  .pipeline-grid,
+  .stream-steps,
+  .error-grid,
+  .docs-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pipeline-arrow {
+    display: none;
+  }
+
+  .pipeline-node.ui {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 720px) {
+  .docs-nav {
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .docs-nav-links {
+    justify-content: flex-end;
+  }
+
+  .docs-layout,
+  .docs-nav {
+    width: min(100% - 28px, 1280px);
+  }
+
+  .docs-toc,
+  .docs-metrics,
+  .pipeline-grid,
+  .stream-steps,
+  .template-grid,
+  .split-cards,
+  .non-goal-grid,
+  .error-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .docs-hero h1 {
+    font-size: clamp(2.7rem, 16vw, 4.4rem);
+  }
+}

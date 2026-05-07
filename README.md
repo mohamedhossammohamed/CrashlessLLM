@@ -246,7 +246,13 @@ For announcements, roadmap notes, and primary public communication, follow [@Moh
 
 ## Architecture
 
-Read the full architecture brief in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Read the designed technical documentation on GitHub Pages:
+
+```text
+https://mohamedhossammohamed.github.io/CrashlessLLM/docs/
+```
+
+The Markdown source remains available at [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## License
 

@@ -265,6 +265,9 @@ The API is intentionally small, but the boundary is designed for real production
 Landing page:
 https://mohamedhossammohamed.github.io/CrashlessLLM/
 
+Technical docs:
+https://mohamedhossammohamed.github.io/CrashlessLLM/docs/
+
 GitHub:
 https://github.com/mohamedhossammohamed/CrashlessLLM
 

@@ -13,6 +13,7 @@ This file is a copy/paste checklist for creating and publishing the CrashlessLLM
 - **Repository URL:** `https://github.com/mohamedhossammohamed/CrashlessLLM`
 - **Short description:** `Crash-resistant local GGUF inference for .NET and Avalonia apps.`
 - **Website / Pages path:** enable GitHub Pages from the repository root or `/docs` only if you move the landing site. The current landing site is root-level `index.html`, `styles.css`, and `script.js`.
+- **Designed docs URL:** `https://mohamedhossammohamed.github.io/CrashlessLLM/docs/`
 - **Topics:** `dotnet`, `avalonia`, `llm`, `gguf`, `llama-cpp`, `native-interop`, `p-invoke`, `local-ai`, `desktop-ai`, `crash-resistance`
 - **Social link:** `https://x.com/MohamedHz72007`
 

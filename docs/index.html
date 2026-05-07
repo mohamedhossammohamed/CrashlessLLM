@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CrashlessLLM Architecture — Managed/native safety boundary</title>
+  <meta name="description" content="Deep technical architecture of CrashlessLLM: predictive allocation gating, C ABI design, bounded backpressure, SafeHandle ownership, UTF-8 reconstruction, sampling controls, and CI packaging.">
+  <link rel="stylesheet" href="../styles.css">
+  <link rel="stylesheet" href="docs.css">
+</head>
+<body class="docs-body">
+  <div class="page-glow"></div>
+  <header class="docs-nav">
+    <a class="brand" href="../" aria-label="CrashlessLLM home">
+      <span class="brand-mark"></span>
+      <span>CrashlessLLM</span>
+    </a>
+    <nav class="docs-nav-links" aria-label="Documentation navigation">
+      <a href="#allocation-gate">Memory gate</a>
+      <a href="#c-abi">C ABI</a>
+      <a href="#streaming">Streaming</a>
+      <a href="#ownership">Ownership</a>
+      <a href="https://github.com/mohamedhossammohamed/CrashlessLLM">GitHub</a>
+    </nav>
+  </header>
+
+  <main class="docs-layout">
+    <aside class="docs-toc" aria-label="Table of contents">
+      <span class="toc-kicker">Architecture</span>
+      <a href="#overview">Overview</a>
+      <a href="#problem">Problem</a>
+      <a href="#system-map">System map</a>
+      <a href="#managed-api">Managed API</a>
+      <a href="#allocation-gate">Predictive gate</a>
+      <a href="#introspection">KV introspection</a>
+      <a href="#c-abi">C ABI</a>
+      <a href="#sampling">Sampling</a>
+      <a href="#templates">Chat templates</a>
+      <a href="#streaming">Streaming</a>
+      <a href="#ownership">Ownership</a>
+      <a href="#observability">CI & release</a>
+      <a href="#non-goals">Non-goals</a>
+    </aside>
+
+    <article class="docs-article">
+      <section class="docs-hero" id="overview">
+        <div class="docs-eyebrow">Technical documentation</div>
+        <h1>CrashlessLLM Architecture</h1>
+        <p>CrashlessLLM is a managed safety boundary for local GGUF inference in .NET and Avalonia apps. The architecture is designed around one operational promise: native inference should fail predictably, stream safely, and release deterministically instead of freezing or killing the host UI process.</p>
+        <div class="docs-actions">
+          <a class="button primary" href="../">Landing page</a>
+          <a class="button secondary" href="ARCHITECTURE.md">Markdown source</a>
+          <a class="button secondary" href="https://github.com/mohamedhossammohamed/CrashlessLLM">View repository</a>
+        </div>
+        <div class="docs-metrics" aria-label="CrashlessLLM architectural properties">
+          <div><strong>3</strong><span>line public API</span></div>
+          <div><strong>50</strong><span>token backpressure window</span></div>
+          <div><strong>30%</strong><span>default memory margin</span></div>
+          <div><strong>12</strong><span>stress tests</span></div>
+        </div>
+      </section>
+
+      <section class="doc-section" id="problem">
+        <span class="section-kicker">Failure domain</span>
+        <h2>The problem is not calling llama.cpp. The problem is surviving it.</h2>
+        <p>High-performance local inference libraries allocate aggressively outside the CLR. When a .NET desktop app embeds that runtime directly, the application crosses from managed safety into a world where the GC cannot see model weights, KV cache, sampler state, backend workspaces, GPU offload allocations, or allocator fragmentation.</p>
+        <div class="doc-callout danger">
+          <strong>Naive native wrappers discover memory failure too late.</strong>
+          <span>Once the process is inside native model/context allocation, the failure can be an OS OOM kill, a native exception, a null pointer path, memory-pressure stalls, or a frozen UI message pump.</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Concern</th><th>Naive wrapper</th><th>CrashlessLLM</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Model admission</td><td>Load first, hope allocation succeeds.</td><td>Predict memory pressure before native allocation.</td></tr>
+              <tr><td>Native memory visibility</td><td>CLR cannot see weights, context, sampler, or backend workspaces.</td><td>Native telemetry is surfaced as managed diagnostics.</td></tr>
+              <tr><td>Token streaming</td><td>Callbacks push at model speed regardless of UI consumption.</td><td>Bounded channel backpressure forces the worker to wait.</td></tr>
+              <tr><td>UTF-8 handling</td><td>Token fragments are often marshalled as independent strings.</td><td>Bytes are copied and accumulated until valid UTF-8 can be emitted.</td></tr>
+              <tr><td>Lifetime</td><td>Raw pointers or finalizer timing leak into app code.</td><td>Opaque handles are wrapped in SafeHandle and disposed deterministically.</td></tr>
+              <tr><td>Configuration</td><td>Sampling, token limits, and prompt formats are scattered.</td><td>SamplingOptions, MaxTokens, and ChatTemplate centralize behavior.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="doc-section" id="system-map">
+        <span class="section-kicker">System map</span>
+        <h2>The boundary is deliberately layered.</h2>
+        <p>The architecture separates developer ergonomics from native survival mechanics. The public surface remains small while the internals enforce admission control, ABI safety, streaming pressure control, and deterministic cleanup.</p>
+        <div class="pipeline-grid">
+          <div class="pipeline-node managed"><strong>Avalonia / .NET app</strong><span>Calls <code>LLM.LoadSafe()</code> and consumes <code>IAsyncEnumerable&lt;string&gt;</code>.</span></div>
+          <div class="pipeline-arrow">→</div>
+          <div class="pipeline-node"><strong>Managed facade</strong><span>Validates ABI, applies defaults, maps errors into exceptions.</span></div>
+          <div class="pipeline-arrow">→</div>
+          <div class="pipeline-node gate"><strong>Predictive allocation gate</strong><span>Refuses unsafe model/context admissions before native load.</span></div>
+          <div class="pipeline-arrow">→</div>
+          <div class="pipeline-node native"><strong>Opaque C ABI session</strong><span>No C++ ownership crosses into managed code.</span></div>
+          <div class="pipeline-arrow">→</div>
+          <div class="pipeline-node ui"><strong>Bounded token stream</strong><span>UTF-8 reconstructed, channel backpressured, UI remains async.</span></div>
+        </div>
+      </section>
+
+      <section class="doc-section" id="managed-api">
+        <span class="section-kicker">Layer 1</span>
+        <h2>Managed facade and zero-config defaults</h2>
+        <p>The developer-facing API is intentionally boring. The complexity is below the surface, where the safety boundary can own it.</p>
+        <pre class="code-block"><code>using var llm = LLM.LoadSafe("models/llama-3-8b.gguf");
+await foreach (var token in llm.StreamAsync("Explain bounded backpressure."))
+    Output.Text += token;</code></pre>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Option</th><th>Default</th><th>Stability rationale</th></tr></thead>
+            <tbody>
+              <tr><td><code>Threads</code></td><td><code>max(1, Environment.ProcessorCount / 2)</code></td><td>Leaves CPU headroom for UI, GC, compositor, and OS scheduling.</td></tr>
+              <tr><td><code>ContextSize</code></td><td><code>4096</code></td><td>Avoids accidental large KV-cache allocations.</td></tr>
+              <tr><td><code>GpuLayers</code></td><td><code>99</code></td><td>Requests maximum native offload where supported while preserving caller override.</td></tr>
+              <tr><td><code>MemorySafetyMargin</code></td><td><code>0.30</code></td><td>Adds allocator, backend workspace, fragmentation, and OS variance headroom.</td></tr>
+              <tr><td><code>MaxTokens</code></td><td><code>512</code></td><td>Prevents runaway generations by default.</td></tr>
+              <tr><td><code>Sampling</code></td><td><code>null</code></td><td>Native defaults: temperature 1.0, top-k 40, top-p 0.95, min-p 0.05.</td></tr>
+              <tr><td><code>ILogger</code></td><td><code>NullLogger.Instance</code></td><td>Structured logging is optional and allocation-light by default.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="doc-section" id="allocation-gate">
+        <span class="section-kicker">Layer 2</span>
+        <h2>Predictive Allocation Gating</h2>
+        <p>CrashlessLLM reframes model load as an admission-control decision. The gate estimates whether the process can safely admit the requested model/context before calling into native model allocation.</p>
+        <div class="formula-card">
+          <h3>Pre-load heuristic</h3>
+          <pre><code>K = C × 131,072
+B = W + K
+M = floor(B × r)
+P = B + M
+
+allow load if A is unavailable, otherwise require P <= A</code></pre>
+        </div>
+        <div class="table-wrap two-col-table">
+          <table>
+            <thead><tr><th>Symbol</th><th>Meaning</th><th>Implementation</th></tr></thead>
+            <tbody>
+              <tr><td><code>W</code></td><td>GGUF model file size in bytes</td><td><code>stat</code> / <code>_stat64</code></td></tr>
+              <tr><td><code>C</code></td><td>Requested context size in tokens</td><td><code>LlmLoadOptions.ContextSize</code>, default 4096</td></tr>
+              <tr><td><code>D</code></td><td>Conservative KV density</td><td>131,072 bytes/token (128 KiB)</td></tr>
+              <tr><td><code>K</code></td><td>Estimated KV cache bytes</td><td><code>C × D</code></td></tr>
+              <tr><td><code>r</code></td><td>Safety margin fraction</td><td>default 0.30</td></tr>
+              <tr><td><code>A</code></td><td>Available physical memory</td><td>platform telemetry</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="doc-callout">
+          <strong>Why a conservative heuristic?</strong>
+          <span>The gate must run before llama.cpp has parsed model internals. It intentionally favors rejecting risky loads over entering native allocation and hoping the OS stays kind.</span>
+        </div>
+        <h3>Example budget</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Term</th><th>Calculation</th><th>Result</th></tr></thead>
+            <tbody>
+              <tr><td>Model bytes <code>W</code></td><td><code>4 × 1024³</code></td><td>4,294,967,296 bytes</td></tr>
+              <tr><td>KV estimate <code>K</code></td><td><code>4096 × 131,072</code></td><td>536,870,912 bytes</td></tr>
+              <tr><td>Base <code>B</code></td><td><code>W + K</code></td><td>4,831,838,208 bytes</td></tr>
+              <tr><td>Safety margin <code>M</code></td><td><code>floor(B × 0.30)</code></td><td>1,449,551,462 bytes</td></tr>
+              <tr><td>Predicted total <code>P</code></td><td><code>B + M</code></td><td>6,281,389,670 bytes (~5.85 GiB)</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h3>Platform memory telemetry</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Platform</th><th>Source</th><th>Notes</th></tr></thead>
+            <tbody>
+              <tr><td>Windows</td><td><code>GlobalMemoryStatusEx().ullAvailPhys</code></td><td>Uses OS-reported available physical memory.</td></tr>
+              <tr><td>macOS</td><td><code>host_statistics64</code> + page size from <code>sysctl</code></td><td>Counts free + inactive + speculative pages; excludes wired kernel memory.</td></tr>
+              <tr><td>Linux / Android</td><td><code>_SC_AVPHYS_PAGES × _SC_PAGE_SIZE</code></td><td>Uses kernel-reported available physical pages.</td></tr>
+              <tr><td>Other</td><td>Unavailable (<code>0</code>)</td><td>Gate bypasses to avoid permanent false rejection on unknown targets.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="doc-section" id="introspection">
+        <span class="section-kicker">Layer 3</span>
+        <h2>Accurate post-load KV introspection</h2>
+        <p>After a session is safely loaded, CrashlessLLM can query actual model architecture. This does not replace the pre-load gate; it explains the real model after admission succeeds.</p>
+        <div class="formula-card compact-formula">
+          <h3>Post-load KV bytes/token</h3>
+          <pre><code>n_embd_head = n_embd / n_head
+BytesPerTokenKv = 2 × n_layer × n_embd_head × n_head_kv × sizeof(float)</code></pre>
+          <p>The leading <code>2</code> accounts for K and V tensors.</p>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Managed field</th><th>Native source / meaning</th></tr></thead>
+            <tbody>
+              <tr><td><code>NLayer</code></td><td><code>llama_model_n_layer(model)</code></td></tr>
+              <tr><td><code>NEmbd</code></td><td><code>llama_model_n_embd(model)</code></td></tr>
+              <tr><td><code>NHead</code></td><td><code>llama_model_n_head(model)</code></td></tr>
+              <tr><td><code>NHeadKv</code></td><td><code>llama_model_n_head_kv(model)</code></td></tr>
+              <tr><td><code>NCtxTrain</code></td><td><code>llama_model_n_ctx_train(model)</code></td></tr>
+              <tr><td><code>BytesPerTokenKv</code></td><td>Accurate post-load KV bytes per generated token.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="doc-section" id="c-abi">
+        <span class="section-kicker">Layer 4</span>
+        <h2>Versioned C ABI boundary</h2>
+        <p>The C ABI is intentionally flat. It uses primitive parameters, opaque pointers, blittable structs, explicit error codes, synchronous callbacks, and version checks. No C++ ownership crosses into .NET.</p>
+        <div class="table-wrap wide-table">
+          <table>
+            <thead><tr><th>Native export</th><th>Managed role</th><th>Boundary rule</th></tr></thead>
+            <tbody>
+              <tr><td><code>crashless_get_api_version()</code></td><td>ABI compatibility check</td><td>Managed code rejects anything other than version 1.</td></tr>
+              <tr><td><code>crashless_v1_create_config(...)</code></td><td>Allocates native configuration</td><td>Returns error code and opaque <code>void*</code>.</td></tr>
+              <tr><td><code>crashless_v1_config_set_context_size(...)</code></td><td>Context override</td><td>Primitive <code>int</code>; invalid values return explicit errors.</td></tr>
+              <tr><td><code>crashless_v1_config_set_memory_margin(...)</code></td><td>Memory margin override</td><td>Primitive <code>double</code>; native clamps invalid values.</td></tr>
+              <tr><td><code>crashless_v1_config_set_sampling_params(...)</code></td><td>Sampling controls</td><td>Blittable struct with sentinels for defaults.</td></tr>
+              <tr><td><code>crashless_v1_config_set_n_predict(...)</code></td><td>Max-token limit</td><td><code>512</code> default; <code>-1</code> allows remaining context.</td></tr>
+              <tr><td><code>crashless_v1_load_model_safe_ex(...)</code></td><td>Predictive gate + load</td><td>Outputs opaque session and load diagnostics.</td></tr>
+              <tr><td><code>crashless_v1_generate_async(...)</code></td><td>Starts native worker</td><td>Returns immediately; tokens arrive through callback.</td></tr>
+              <tr><td><code>crashless_v1_cancel_generation(...)</code></td><td>Cooperative cancellation</td><td>Requests cancellation without throwing across ABI.</td></tr>
+              <tr><td><code>crashless_v1_free_session_secure(...)</code></td><td>Deterministic cleanup</td><td>Releases sampler, context, model, worker state, and container.</td></tr>
+              <tr><td><code>crashless_v1_query_gpu_backends()</code></td><td>GPU backend flags</td><td>Maps compile-time <code>GGML_USE_*</code> flags to <code>GpuBackend</code>.</td></tr>
+              <tr><td><code>crashless_v1_query_model_arch_info(...)</code></td><td>Post-load architecture</td><td>Outputs a blittable model metadata struct.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h3>Error taxonomy</h3>
+        <div class="error-grid">
+          <div><code>0</code><span>Success</span></div>
+          <div><code>-1</code><span>Invalid pointer or ABI argument</span></div>
+          <div><code>-100</code><span>Predicted insufficient memory</span></div>
+          <div><code>-101</code><span>Model/context load failure</span></div>
+          <div><code>-102</code><span>Native internal exception trapped</span></div>
+          <div><code>-103</code><span>Worker thread spawn failed</span></div>
+          <div><code>-104</code><span>Generation already active</span></div>
+        </div>
+      </section>
+
+      <section class="doc-section" id="sampling">
+        <span class="section-kicker">Layer 5</span>
+        <h2>Native sampler-chain construction</h2>
+        <p><code>SamplingOptions</code> translates managed intent into a native sampler chain. Omitted values use sentinel defaults so callers can tune only what they care about.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Managed option</th><th>Native sentinel</th><th>Behavior</th></tr></thead>
+            <tbody>
+              <tr><td><code>Temperature</code></td><td><code>&lt; 0</code></td><td>Default 1.0; <code>0</code> selects greedy decoding.</td></tr>
+              <tr><td><code>TopK</code></td><td><code>&lt;= 0</code></td><td>Default 40; <code>1</code> behaves like top-1 sampling.</td></tr>
+              <tr><td><code>TopP</code></td><td><code>&lt; 0</code></td><td>Default 0.95.</td></tr>
+              <tr><td><code>MinP</code></td><td><code>&lt; 0</code></td><td>Default 0.05.</td></tr>
+              <tr><td><code>RepeatPenalty</code></td><td><code>&lt; 0</code></td><td>Default 1.0; non-1.0 values enable repeat penalty.</td></tr>
+              <tr><td><code>RepeatLastN</code></td><td><code>&lt;= 0</code></td><td>Defaults to 64.</td></tr>
+              <tr><td><code>Seed</code></td><td><code>0</code></td><td>Native random-seed behavior.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="doc-callout">
+          <strong>Operational quirk:</strong>
+          <span><code>Temperature = 0</code> is not a tiny temperature. It intentionally switches to greedy decoding so deterministic workflows do not rely on sampler edge behavior.</span>
+        </div>
+      </section>
+
+      <section class="doc-section" id="templates">
+        <span class="section-kicker">Layer 6</span>
+        <h2>Chat templates are part of infrastructure</h2>
+        <p>Prompt framing bugs often masquerade as model quality problems. CrashlessLLM provides small helpers for common open-weight model families so UI code does not scatter format-specific delimiters.</p>
+        <div class="template-grid">
+          <div><strong>Llama 3</strong><span><code>&lt;|begin_of_text|&gt;</code>, role headers, <code>&lt;|eot_id|&gt;</code></span></div>
+          <div><strong>ChatML</strong><span>Qwen, DeepSeek, Yi, and compatible models</span></div>
+          <div><strong>Mistral</strong><span><code>&lt;s&gt;[INST] ... [/INST]</code></span></div>
+          <div><strong>Gemma</strong><span><code>&lt;start_of_turn&gt;user/model</code> blocks</span></div>
+          <div><strong>Phi</strong><span><code>&lt;|system|&gt;</code>, <code>&lt;|user|&gt;</code>, <code>&lt;|assistant|&gt;</code>, <code>&lt;|end|&gt;</code></span></div>
+        </div>
+      </section>
+
+      <section class="doc-section" id="streaming">
+        <span class="section-kicker">Layers 7–8</span>
+        <h2>GC-safe streaming and bounded backpressure</h2>
+        <p>Native token callbacks are synchronous and ephemeral. The callback pointer is valid only during invocation, so CrashlessLLM copies native bytes immediately and never stores the native pointer.</p>
+        <div class="stream-steps">
+          <div><strong>1. Native worker</strong><span>Generation runs away from the caller/UI thread.</span></div>
+          <div><strong>2. Ephemeral callback</strong><span>Callback receives a temporary <code>const char*</code> token piece.</span></div>
+          <div><strong>3. Immediate byte copy</strong><span>Managed code copies bytes before the native buffer goes out of scope.</span></div>
+          <div><strong>4. UTF-8 reconstruction</strong><span>Incomplete multi-byte sequences are buffered until valid.</span></div>
+          <div><strong>5. Bounded channel</strong><span>At most 50 tokens can sit ahead of the consumer.</span></div>
+          <div><strong>6. Async UI consumption</strong><span>Avalonia consumes <code>IAsyncEnumerable&lt;string&gt;</code> at its own pace.</span></div>
+        </div>
+        <div class="doc-callout success">
+          <strong>The pressure valve is intentional.</strong>
+          <span>If the channel fills, the native worker waits. Backpressure lands on inference, not the UI message pump.</span>
+        </div>
+      </section>
+
+      <section class="doc-section" id="ownership">
+        <span class="section-kicker">Layer 9</span>
+        <h2>Deterministic ownership and concurrency model</h2>
+        <p>CrashlessLLM treats native sessions as expensive, stateful resources with a strict release order. The managed wrapper exposes <code>IDisposable</code>; the native boundary releases sampler, context, model, worker state, and the session container.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Resource</th><th>Owner</th><th>Release path</th></tr></thead>
+            <tbody>
+              <tr><td><code>llama_sampler*</code></td><td>Native session container</td><td>Freed before context/model teardown.</td></tr>
+              <tr><td><code>llama_context*</code></td><td>Native session container</td><td>Freed after sampler.</td></tr>
+              <tr><td><code>llama_model*</code></td><td>Native session container</td><td>Freed after context.</td></tr>
+              <tr><td>Worker state</td><td>Native session container</td><td>Cancelled before handle disposal; deferred cleanup avoids worker-thread join deadlocks.</td></tr>
+              <tr><td>Callback delegate</td><td><code>LLMSession</code></td><td>Retained until disposal to prevent premature GC.</td></tr>
+              <tr><td>Opaque handle</td><td><code>SafeLlmContextHandle</code></td><td>Released deterministically by <code>Dispose</code>, with SafeHandle fallback.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="split-cards">
+          <div><strong>Not supported</strong><span>Multiple active streams on a single <code>LLMSession</code>. The session has one native generation gate.</span></div>
+          <div><strong>Supported</strong><span>Multiple independent <code>LLMSession</code> instances running in parallel, each with its own native model/context pair.</span></div>
+        </div>
+      </section>
+
+      <section class="doc-section" id="observability">
+        <span class="section-kicker">Layer 10</span>
+        <h2>Observability, CI, and release infrastructure</h2>
+        <p>The project includes runtime observability and publishing infrastructure because native reliability is not just API shape; it is also repeatable builds, package contents, and test coverage.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Capability</th><th>Implementation</th></tr></thead>
+            <tbody>
+              <tr><td>Structured logging</td><td><code>ILogger</code> overloads log session creation, gate acquisition, generation start/failure, architecture query failures, and disposal.</td></tr>
+              <tr><td>GPU backend detection</td><td><code>LLM.QueryGpuBackends()</code> maps native compile-time flags to Metal, CUDA, Vulkan, ROCm, and SYCL.</td></tr>
+              <tr><td>Stress coverage</td><td>Deterministic native shim covers UTF-8 fragmentation, backpressure, lifecycle, predictive OOM mapping, sampling, MaxTokens, GPU query, architecture query, and chat templates.</td></tr>
+              <tr><td>Native CI</td><td>GitHub Actions builds artifacts for macOS arm64/x64, Linux x64/arm64, and Windows x64.</td></tr>
+              <tr><td>NuGet publication</td><td><code>scripts/publish-nuget.sh</code> builds, tests, packs, verifies, and pushes.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="doc-section" id="non-goals">
+        <span class="section-kicker">Boundaries</span>
+        <h2>Non-goals are part of the design.</h2>
+        <div class="non-goal-grid">
+          <div><strong>Not a sandbox</strong><span>Do not load untrusted GGUF files. Parser vulnerabilities are below this boundary.</span></div>
+          <div><strong>Not a server</strong><span>CrashlessLLM is not Ollama, REST inference, or a cloud model host.</span></div>
+          <div><strong>Not an exact pre-load proof</strong><span>The admission gate is conservative. Accurate architecture reporting is available after load.</span></div>
+          <div><strong>Not multi-stream per session</strong><span>Create multiple sessions for parallel generation instead of multiplexing one native context.</span></div>
+        </div>
+      </section>
+
+      <section class="doc-section doc-final">
+        <span class="section-kicker">Summary</span>
+        <h2>A small API over a strict stability boundary.</h2>
+        <p>CrashlessLLM turns local LLM embedding from an unmanaged allocation gamble into a predictable subsystem: memory admission, ABI safety, bounded streaming, deterministic native ownership, structured diagnostics, and reproducible packaging.</p>
+        <div class="docs-actions">
+          <a class="button primary" href="../">Back to landing page</a>
+          <a class="button secondary" href="ARCHITECTURE.md">View Markdown source</a>
+        </div>
+      </section>
+    </article>
+  </main>
+</body>
+</html>
