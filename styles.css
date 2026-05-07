@@ -161,10 +161,10 @@ button {
 .hero {
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
-  gap: 36px;
+  gap: 48px;
   align-items: center;
   min-height: calc(100vh - 84px);
-  padding: 84px 0 54px;
+  padding: 92px 0 64px;
 }
 
 .eyebrow,
@@ -174,7 +174,7 @@ button {
   gap: 10px;
   color: var(--cyan);
   text-transform: uppercase;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.12em;
   font-size: 0.76rem;
   font-weight: 800;
 }
@@ -196,23 +196,24 @@ p {
 
 h1 {
   max-width: 780px;
-  margin-bottom: 22px;
-  font-size: clamp(3.7rem, 8vw, 7.6rem);
-  line-height: 0.88;
-  letter-spacing: -0.085em;
+  margin-bottom: 26px;
+  font-size: clamp(3.3rem, 7.4vw, 7rem);
+  line-height: 0.98;
+  letter-spacing: -0.052em;
 }
 
 .hero-subtitle {
   max-width: 720px;
   color: var(--muted-strong);
-  font-size: clamp(1.06rem, 2vw, 1.28rem);
-  line-height: 1.7;
+  font-size: clamp(1.04rem, 1.8vw, 1.22rem);
+  line-height: 1.82;
 }
 
 .creator-line {
-  margin: -6px 0 0;
+  margin: 12px 0 0;
   color: var(--muted);
   font-size: 0.98rem;
+  line-height: 1.65;
 }
 
 .creator-line a {
@@ -223,7 +224,7 @@ h1 {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
-  margin: 34px 0 16px;
+  margin: 32px 0 18px;
 }
 
 .button {
@@ -279,12 +280,12 @@ h1 {
 .proof-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 22px;
+  gap: 12px;
+  margin-top: 26px;
 }
 
 .proof-row span {
-  padding: 8px 10px;
+  padding: 9px 12px;
   border: 1px solid var(--border);
   border-radius: 999px;
   color: var(--muted);
@@ -305,7 +306,7 @@ h1 {
 
 .hero-card {
   min-height: 420px;
-  padding: 20px;
+  padding: 24px;
   border-radius: var(--radius-xl);
 }
 
@@ -402,38 +403,38 @@ h1 {
 
 .hero-stat-grid span {
   color: var(--muted);
-  line-height: 1.45;
+  line-height: 1.6;
 }
 
 .visual-section,
 .code-section,
 .features,
 .comparison {
-  padding: 80px 0;
+  padding: 92px 0;
 }
 
 .section-heading {
   max-width: 760px;
-  margin-bottom: 28px;
+  margin-bottom: 34px;
 }
 
 .section-heading.compact {
   max-width: 840px;
   text-align: center;
-  margin: 0 auto 28px;
+  margin: 0 auto 34px;
 }
 
 .section-heading h2 {
-  margin: 10px 0 14px;
-  font-size: clamp(2.2rem, 5vw, 4.8rem);
-  line-height: 0.96;
-  letter-spacing: -0.065em;
+  margin: 12px 0 18px;
+  font-size: clamp(2.15rem, 4.7vw, 4.45rem);
+  line-height: 1.06;
+  letter-spacing: -0.044em;
 }
 
 .section-heading p {
   color: var(--muted-strong);
   font-size: 1.06rem;
-  line-height: 1.7;
+  line-height: 1.82;
 }
 
 .memory-visual {
@@ -642,8 +643,8 @@ pre {
 
 .feature-card {
   position: relative;
-  min-height: 300px;
-  padding: 24px;
+  min-height: 320px;
+  padding: 28px;
   overflow: hidden;
   border-radius: var(--radius-lg);
   transition: transform 220ms ease, border-color 220ms ease, box-shadow 220ms ease;
@@ -713,15 +714,16 @@ pre {
 
 .feature-card h3,
 .comparison-card h3 {
-  margin-bottom: 12px;
+  margin-bottom: 14px;
   font-size: 1.25rem;
-  letter-spacing: -0.03em;
+  line-height: 1.28;
+  letter-spacing: -0.014em;
 }
 
 .feature-card p,
 .comparison-card li {
   color: var(--muted-strong);
-  line-height: 1.72;
+  line-height: 1.82;
 }
 
 .feature-card code {

@@ -240,6 +240,7 @@ The script builds Release, runs stress tests, packs `CrashlessLLM`, verifies pac
 - Security policy: [SECURITY.md](SECURITY.md)
 - Code of conduct: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 - GitHub upload guide: [docs/GITHUB_UPLOAD.md](docs/GITHUB_UPLOAD.md)
+- X launch thread draft: [docs/X_LAUNCH_THREAD.md](docs/X_LAUNCH_THREAD.md)
 
 For announcements, roadmap notes, and primary public communication, follow [@MohamedHz72007 on X](https://x.com/MohamedHz72007).
 

@@ -27,9 +27,9 @@
   <main id="top">
     <section class="hero section-shell">
       <div class="hero-copy">
-        <div class="eyebrow"><span></span> Native GGUF inference without UI process roulette</div>
-        <h1>The local LLM runtime that refuses to crash your app.</h1>
-        <p class="hero-subtitle">CrashlessLLM gives .NET and Avalonia teams a three-line API over predictive memory gating, configurable sampling, chat templates, GPU backend detection, SafeHandle cleanup, and UTF-8-safe bounded streaming.</p>
+        <div class="eyebrow"><span></span> Stability-first native GGUF inference</div>
+        <h1>Local LLM inference that keeps your .NET app alive.</h1>
+        <p class="hero-subtitle">CrashlessLLM wraps llama.cpp behind a strict managed/native boundary: predictive memory admission, bounded token backpressure, configurable sampling, chat templates, GPU backend detection, and deterministic SafeHandle cleanup.</p>
         <p class="creator-line">By <strong>MHMZAHRAN</strong> · announcements on <a href="https://x.com/MohamedHz72007">@MohamedHz72007</a></p>
         <div class="hero-actions">
           <a class="button primary" href="https://github.com/mohamedhossammohamed/CrashlessLLM">View on GitHub</a>
@@ -67,9 +67,9 @@
 
     <section class="visual-section section-shell" aria-labelledby="visual-title">
       <div class="section-heading">
-        <span class="section-kicker">The vibe</span>
-        <h2 id="visual-title">A hostile memory environment, contained.</h2>
-        <p>Red allocator pressure approaches the process. The Crashless Boundary gates unsafe loads, absorbs token bursts, and releases a stable stream to Avalonia.</p>
+        <span class="section-kicker">The boundary</span>
+        <h2 id="visual-title">Native memory pressure, contained.</h2>
+        <p>The hostile side is allocator pressure and high-velocity token callbacks. The Crashless Boundary admits only safe loads, backpressures bursts, and emits a steady stream to Avalonia.</p>
       </div>
       <div class="memory-visual" role="img" aria-label="Animated diagram showing hostile memory particles being caught by CrashlessLLM and converted into stable token streams for Avalonia UI">
         <canvas id="memoryCanvas"></canvas>
@@ -114,7 +114,7 @@
     <section class="features section-shell" id="features" aria-labelledby="features-title">
       <div class="section-heading compact">
         <span class="section-kicker">System stability primitives</span>
-        <h2 id="features-title">Built for apps that need to stay open and ship.</h2>
+        <h2 id="features-title">Built for desktop apps that cannot afford to disappear.</h2>
       </div>
       <div class="feature-grid">
         <article class="feature-card">

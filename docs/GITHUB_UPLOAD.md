@@ -70,6 +70,10 @@ CrashlessLLM 0.2.0-alpha — crash-resistant local GGUF inference for .NET
 - 12/12 stress tests passing
 ```
 
+## X / Twitter launch thread
+
+A copy-ready technical launch thread is available in [docs/X_LAUNCH_THREAD.md](X_LAUNCH_THREAD.md).
+
 ## Before first push
 
 1. Confirm all generated files are staged:
