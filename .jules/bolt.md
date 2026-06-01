@@ -1,0 +1,3 @@
+## 2024-06-01 - Optimizing Native UTF-8 String Processing
+**Learning:** In C#, iterating over a null-terminated native pointer byte-by-byte and adding to a `List<byte>` one-by-one inside a loop incurs significant overhead due to repeated bounds checking, method calls, and multiple array allocations as the list resizes.
+**Action:** Use `MemoryMarshal.CreateReadOnlySpanFromNullTerminated((byte*)ptr)` combined with `List<T>.AddRange(ReadOnlySpan<T>)` (available in .NET 8+) to achieve O(1) list resizing and leverage optimized native `strlen` + block memory copying (`memmove`). This reduces CPU overhead on hot paths like token streaming.
