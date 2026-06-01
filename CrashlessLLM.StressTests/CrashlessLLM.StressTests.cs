@@ -150,11 +150,18 @@ public sealed class NativeShimFixture
         {
             string[] extensions = (Environment.GetEnvironmentVariable("PATHEXT") ?? DefaultWindowsPathExtensions)
                 .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            candidateNames = new string[extensions.Length];
-            for (int i = 0; i < extensions.Length; i++)
+            bool commandHasExtension = Path.HasExtension(command);
+            candidateNames = new string[commandHasExtension ? 1 : extensions.Length];
+            if (commandHasExtension)
             {
-                string extension = extensions[i];
-                candidateNames[i] = command.EndsWith(extension, StringComparison.OrdinalIgnoreCase) ? command : command + extension;
+                candidateNames[0] = command;
+            }
+            else
+            {
+                for (int i = 0; i < extensions.Length; i++)
+                {
+                    candidateNames[i] = $"{command}{extensions[i]}";
+                }
             }
         }
         else
