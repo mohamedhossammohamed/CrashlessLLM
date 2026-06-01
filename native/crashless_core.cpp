@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <cfloat>
 #include <cstdint>
 #include <cstring>
@@ -22,6 +23,9 @@
 
 #if defined(_WIN32)
     #include <sys/stat.h>
+    #ifndef NOMINMAX
+        #define NOMINMAX
+    #endif
     #define WIN32_LEAN_AND_MEAN
     #include <windows.h>
 #elif defined(__APPLE__)

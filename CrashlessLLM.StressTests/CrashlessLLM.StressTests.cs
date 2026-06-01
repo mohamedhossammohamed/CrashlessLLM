@@ -101,7 +101,71 @@ public sealed class NativeShimFixture
             return configuredCompiler;
         }
 
-        return RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "cl" : "c++";
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            if (IsCommandAvailable("cl"))
+            {
+                return "cl";
+            }
+
+            if (IsCommandAvailable("clang++"))
+            {
+                return "clang++";
+            }
+
+            if (IsCommandAvailable("g++"))
+            {
+                return "g++";
+            }
+
+            return "cl";
+        }
+
+        return IsCommandAvailable("c++") ? "c++" : "g++";
+    }
+
+    private static bool IsCommandAvailable(string command)
+    {
+        if (Path.IsPathRooted(command) && File.Exists(command))
+        {
+            return true;
+        }
+
+        string? pathEnv = Environment.GetEnvironmentVariable("PATH");
+        if (string.IsNullOrWhiteSpace(pathEnv))
+        {
+            return false;
+        }
+
+        string[] candidateNames;
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            string[] extensions = (Environment.GetEnvironmentVariable("PATHEXT") ?? ".COM;.EXE;.BAT;.CMD")
+                .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            candidateNames = new string[extensions.Length];
+            for (int i = 0; i < extensions.Length; i++)
+            {
+                string extension = extensions[i];
+                candidateNames[i] = command.EndsWith(extension, StringComparison.OrdinalIgnoreCase) ? command : command + extension;
+            }
+        }
+        else
+        {
+            candidateNames = [command];
+        }
+
+        foreach (string directory in pathEnv.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            foreach (string candidateName in candidateNames)
+            {
+                if (File.Exists(Path.Combine(directory, candidateName)))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private static string GetNativeLibraryFileName()
