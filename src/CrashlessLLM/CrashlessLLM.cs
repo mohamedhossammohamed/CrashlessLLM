@@ -888,12 +888,10 @@ public sealed class LLMSession : IDisposable
     /// </summary>
     private unsafe void ProcessNativeUtf8Pointer(IntPtr ptr, Channel<string> channel)
     {
-        byte* current = (byte*)ptr;
-        while (*current != 0)
-        {
-            _utf8Accumulator.Add(*current);
-            current++;
-        }
+        // ⚡ Bolt: Replaced manual byte-by-byte loop with MemoryMarshal for O(1) list resizing
+        // and optimized native string length calculation, reducing CPU overhead on the fast path.
+        ReadOnlySpan<byte> span = MemoryMarshal.CreateReadOnlySpanFromNullTerminated((byte*)ptr);
+        _utf8Accumulator.AddRange(span);
 
         TryDecodeAccumulator(channel);
     }

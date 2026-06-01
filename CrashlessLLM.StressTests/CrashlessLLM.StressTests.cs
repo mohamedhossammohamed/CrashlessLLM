@@ -24,6 +24,7 @@ public sealed class NativeShimCollection : ICollectionFixture<NativeShimFixture>
 
 public sealed class NativeShimFixture
 {
+    private const string DefaultWindowsPathExtensions = ".COM;.EXE;.BAT;.CMD";
     private static int libraryResolverRegistered;
     private static int testResolverRegistered;
     private static IntPtr nativeHandle;
@@ -101,7 +102,85 @@ public sealed class NativeShimFixture
             return configuredCompiler;
         }
 
-        return RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "cl" : "c++";
+        string[] pathDirectories = GetPathDirectories();
+
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            if (IsCommandAvailable("cl", pathDirectories))
+            {
+                return "cl";
+            }
+
+            if (IsCommandAvailable("clang++", pathDirectories))
+            {
+                return "clang++";
+            }
+
+            if (IsCommandAvailable("g++", pathDirectories))
+            {
+                return "g++";
+            }
+
+            return "cl";
+        }
+
+        return IsCommandAvailable("c++", pathDirectories) ? "c++" : "g++";
+    }
+
+    private static string[] GetPathDirectories()
+    {
+        string? pathEnv = Environment.GetEnvironmentVariable("PATH");
+        if (string.IsNullOrWhiteSpace(pathEnv))
+        {
+            return [];
+        }
+
+        return pathEnv.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    }
+
+    private static bool IsCommandAvailable(string command, IReadOnlyList<string> pathDirectories)
+    {
+        if (Path.IsPathRooted(command) && File.Exists(command))
+        {
+            return true;
+        }
+
+        string[] candidateNames;
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            string[] extensions = (Environment.GetEnvironmentVariable("PATHEXT") ?? DefaultWindowsPathExtensions)
+                .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            bool commandHasExtension = Path.HasExtension(command);
+            candidateNames = new string[commandHasExtension ? 1 : extensions.Length];
+            if (commandHasExtension)
+            {
+                candidateNames[0] = command;
+            }
+            else
+            {
+                for (int i = 0; i < extensions.Length; i++)
+                {
+                    candidateNames[i] = $"{command}{extensions[i]}";
+                }
+            }
+        }
+        else
+        {
+            candidateNames = [command];
+        }
+
+        foreach (string directory in pathDirectories)
+        {
+            foreach (string candidateName in candidateNames)
+            {
+                if (File.Exists(Path.Combine(directory, candidateName)))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private static string GetNativeLibraryFileName()
